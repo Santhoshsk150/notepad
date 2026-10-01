@@ -16,10 +16,11 @@ import UsersPage from './pages/UsersPage';
 import ObjectManagerPage from './pages/ObjectManagerPage';
 import CustomObjectRecordsPage from './pages/CustomObjectRecordsPage';
 import PublicInquiryPage from './pages/PublicInquiryPage';
-import NotificationsPage from './pages/NotificationsPage';
 import InvoicesPage from './pages/InvoicesPage';
 import BrandingSettingsPage from './pages/BrandingSettingsPage';
 import DailyActivitiesPage from './pages/DailyActivitiesPage';
+import NotificationsPage from './pages/NotificationsPage';
+import PlatformCompaniesPage from './pages/PlatformCompaniesPage';
 import { PopupProvider } from './contexts/PopupContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { BrandingProvider } from './contexts/BrandingContext';
@@ -80,6 +81,7 @@ function AppRoutes() {
         <Route path="shipments" element={<TeamPageGuard pageKey="shipments"><ShipmentsPage /></TeamPageGuard>} />
         <Route path="quotations" element={<TeamPageGuard pageKey="quotations"><QuotationsPage /></TeamPageGuard>} />
         <Route path="users" element={<TeamPageGuard pageKey="users"><UsersPage /></TeamPageGuard>} />
+        <Route path="platform/companies" element={<TeamPageGuard pageKey="users"><PlatformCompaniesPage /></TeamPageGuard>} />
         <Route path="settings/branding" element={<TeamPageGuard pageKey="users"><BrandingSettingsPage /></TeamPageGuard>} />
         <Route path="automation" element={<TeamPageGuard pageKey="automation"><AutomationPage /></TeamPageGuard>} />
         <Route path="setup/objects" element={<TeamPageGuard pageKey="custom_objects"><ObjectManagerPage /></TeamPageGuard>} />

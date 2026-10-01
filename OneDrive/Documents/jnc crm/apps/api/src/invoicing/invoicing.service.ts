@@ -330,7 +330,7 @@ export class InvoicingService {
     }
 
     // Ensure uniqueness
-    const existing = await this.prisma.invoice.findUnique({ where: { invoiceNumber } });
+    const existing = await this.prisma.invoice.findFirst({ where: { invoiceNumber, tenantId: user.tenantId || 'default-tenant-id' } });
     if (existing) {
       invoiceNumber = `${invoiceNumber}-${Date.now().toString().slice(-4)}`;
     }

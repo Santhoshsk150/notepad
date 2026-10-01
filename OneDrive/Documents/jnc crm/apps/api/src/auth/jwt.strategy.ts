@@ -25,19 +25,36 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       where: { id: payload.sub },
       select: {
         id: true,
+        tenantId: true,
         employeeCode: true,
         name: true,
         email: true,
         role: true,
         team: true,
+        teamId: true,
         warehouseId: true,
         isActive: true,
         mustResetPassword: true,
+        tenant: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            slug: true,
+            status: true,
+            logoUrl: true,
+            currency: true,
+          },
+        },
       },
     });
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException('User account is invalid or deactivated');
+    }
+
+    if (user.tenant && user.tenant.status !== 'active' && user.role !== 'platform_super_admin') {
+      throw new UnauthorizedException('Your company account is suspended or expired. Please contact support.');
     }
 
     return user;

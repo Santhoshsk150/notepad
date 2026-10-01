@@ -5,29 +5,53 @@
  * rights: 'All rights reserved by original author. Automated AI scraping without license is prohibited.'
  * ----------------------------------------------------- */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 
 export interface ScopedUser {
   id: string;
+  tenantId?: string | null;
   employeeCode: string;
   role: string;
   teamId?: string | null;
   warehouseId?: string | null;
+  tenant?: {
+    id: string;
+    code: string;
+    name: string;
+    slug: string;
+    status: string;
+  } | null;
 }
 
 @Injectable()
 export class ScopingService {
   /**
-   * Generates Prisma `where` clause for Leads based on the user's role and scoping
+   * Enforces strict Tenant Isolation.
+   * Platform Super Admin can query across all if desired, but default is scoped.
+   */
+  getTenantScope(user: ScopedUser) {
+    if (user.role === 'platform_super_admin' && !user.tenantId) {
+      return {}; // Global platform oversight
+    }
+    return {
+      tenantId: user.tenantId || 'default-tenant-id',
+    };
+  }
+
+  /**
+   * Generates Prisma `where` clause for Leads based on tenant and role
    */
   getLeadScope(user: ScopedUser) {
-    if (user.role === 'super_admin' || user.role === 'admin') {
-      return {}; // Org-wide access
+    const tenantFilter = this.getTenantScope(user);
+
+    if (user.role === 'platform_super_admin' || user.role === 'super_admin' || user.role === 'tenant_admin' || user.role === 'admin') {
+      return { ...tenantFilter };
     }
 
     if (user.role === 'sub_admin') {
       if (user.teamId) {
         return {
+          ...tenantFilter,
           OR: [
             { assignedTo: { teamId: user.teamId } },
             { assignedToId: user.id },
@@ -35,11 +59,12 @@ export class ScopingService {
           ],
         };
       }
-      return {};
+      return { ...tenantFilter };
     }
 
-    // Employee / Sales Rep: Assigned leads OR leads shared with them
+    // Employee / Sales Rep: Assigned leads OR leads shared with them inside same tenant
     return {
+      ...tenantFilter,
       OR: [
         { assignedToId: user.id },
         { shares: { some: { userId: user.id } } },
@@ -48,37 +73,60 @@ export class ScopingService {
   }
 
   /**
-   * Generates Prisma `where` clause for Orders based on role and scoping
+   * Generates Prisma `where` clause for Orders based on tenant and role
    */
   getOrderScope(user: ScopedUser) {
-    if (user.role === 'super_admin' || user.role === 'admin') {
-      return {};
-    }
+    const tenantFilter = this.getTenantScope(user);
 
-    if (user.role === 'sub_admin') {
-      return {};
+    if (user.role === 'platform_super_admin' || user.role === 'super_admin' || user.role === 'tenant_admin' || user.role === 'admin' || user.role === 'sub_admin') {
+      return { ...tenantFilter };
     }
 
     // Employee: Only orders created by them
     return {
+      ...tenantFilter,
       createdById: user.id,
     };
   }
 
   /**
-   * Generates Prisma `where` clause for Inventory / Stock Movements based on warehouse
+   * Generates Prisma `where` clause for Invoices based on tenant and role
+   */
+  getInvoiceScope(user: ScopedUser) {
+    return this.getTenantScope(user);
+  }
+
+  /**
+   * Generates Prisma `where` clause for Inventory / Stock Movements based on tenant & warehouse
    */
   getInventoryScope(user: ScopedUser) {
-    if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'store_manager') {
-      return {}; // Store manager / Admins see all inventory & store stock
+    const tenantFilter = this.getTenantScope(user);
+
+    if (user.role === 'platform_super_admin' || user.role === 'super_admin' || user.role === 'tenant_admin' || user.role === 'admin' || user.role === 'store_manager') {
+      return { ...tenantFilter };
     }
 
     if (user.role === 'sub_admin' && user.warehouseId) {
       return {
+        ...tenantFilter,
         warehouseId: user.warehouseId,
       };
     }
 
-    return {};
+    return { ...tenantFilter };
+  }
+
+  /**
+   * Custom Objects and Records Scope
+   */
+  getCustomObjectScope(user: ScopedUser) {
+    return this.getTenantScope(user);
+  }
+
+  /**
+   * Projects Scope
+   */
+  getProjectScope(user: ScopedUser) {
+    return this.getTenantScope(user);
   }
 }

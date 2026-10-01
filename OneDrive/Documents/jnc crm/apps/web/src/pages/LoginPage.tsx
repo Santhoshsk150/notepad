@@ -11,6 +11,7 @@ export default function LoginPage() {
   const { isDark, toggleTheme } = useTheme();
   const { branding } = useBranding();
   const navigate = useNavigate();
+  const [companyCode, setCompanyCode] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -21,7 +22,7 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(username, password);
+      await login(username, password, companyCode.trim() || undefined);
       navigate('/');
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Invalid credentials. Please try again.');
@@ -80,6 +81,20 @@ export default function LoginPage() {
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
+                  <label className="label flex items-center justify-between">
+                    <span>Company / Org Code</span>
+                    <span className="text-[11px] text-slate-400 font-normal">(Optional for Root)</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="input uppercase placeholder:normal-case font-mono tracking-wider"
+                    placeholder="e.g. JNC, VERTEX, ACME"
+                    value={companyCode}
+                    onChange={(e) => setCompanyCode(e.target.value)}
+                  />
+                </div>
+
+                <div>
                   <label className="label">Username or Email</label>
                   <input
                     type="text"
@@ -87,7 +102,6 @@ export default function LoginPage() {
                     placeholder="Enter username or email"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    autoFocus
                     required
                   />
                 </div>

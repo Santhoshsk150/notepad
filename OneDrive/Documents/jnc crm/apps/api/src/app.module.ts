@@ -28,10 +28,10 @@ import { QuotationsModule } from './quotations/quotations.module';
 import { BackupModule } from './backup/backup.module';
 import { SettingsModule } from './settings/settings.module';
 import { ActivitiesModule } from './activities/activities.module';
+import { PlatformModule } from './platform/platform.module';
 
 @Module({
   imports: [
-    // Baseline Global Rate Limiting: 100 requests per minute per IP
     ThrottlerModule.forRoot([
       {
         name: 'default',
@@ -59,6 +59,7 @@ import { ActivitiesModule } from './activities/activities.module';
     BackupModule,
     SettingsModule,
     ActivitiesModule,
+    PlatformModule,
   ],
   providers: [
     {

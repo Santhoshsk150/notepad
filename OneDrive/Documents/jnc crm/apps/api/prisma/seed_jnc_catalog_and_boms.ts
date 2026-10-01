@@ -369,7 +369,12 @@ async function main() {
   let skuCount = 0;
   for (const s of MASTER_SKUS) {
     await prisma.sku.upsert({
-      where: { skuCode: s.skuCode },
+      where: {
+        tenantId_skuCode: {
+          tenantId: 'default-tenant-id',
+          skuCode: s.skuCode,
+        },
+      },
       update: {
         name: s.name,
         packageType: s.packageType,
@@ -380,6 +385,7 @@ async function main() {
         preferredSupplierId: supplier.id,
       },
       create: {
+        tenantId: 'default-tenant-id',
         skuCode: s.skuCode,
         name: s.name,
         packageType: s.packageType,
@@ -403,7 +409,9 @@ async function main() {
   for (const bom of BOMS_DATA) {
     for (const item of bom.items) {
       // Ensure SKU exists for this item
-      let sku = await prisma.sku.findUnique({ where: { skuCode: item.itemCode } });
+      let sku = await prisma.sku.findFirst({
+        where: { skuCode: item.itemCode, tenantId: 'default-tenant-id' },
+      });
       if (!sku) {
         sku = await prisma.sku.create({
           data: {

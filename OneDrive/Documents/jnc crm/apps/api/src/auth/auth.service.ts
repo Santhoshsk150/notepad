@@ -11,11 +11,6 @@ import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto, RefreshTokenDto } from './dto/login.dto';
 
-interface LockoutInfo {
-  failedAttempts: number;
-  lockedUntil?: number;
-}
-
 @Injectable()
 export class AuthService {
   private readonly MAX_FAILED_ATTEMPTS = 5;
@@ -26,13 +21,9 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  /**
-   * Check whether an account is currently in a locked state (100% DB-persisted)
-   */
   private async checkAccountLockout(lockKey: string, user?: any) {
     const now = new Date();
 
-    // 1. Check User table if user is found
     if (user && user.lockoutUntil) {
       if (new Date(user.lockoutUntil) > now) {
         const remainingMinutes = Math.ceil((new Date(user.lockoutUntil).getTime() - now.getTime()) / 60000);
@@ -40,15 +31,13 @@ export class AuthService {
           `Account is temporarily locked due to 5 consecutive failed login attempts. Please try again in ${remainingMinutes} minute(s) or contact administrator.`
         );
       } else {
-        // Lockout expired, reset user counter in DB
         await this.prisma.user.update({
-          include: { teamRef: { select: { id: true, name: true, allowedPages: true } } }, where: { id: user.id },
+          where: { id: user.id },
           data: { failedLoginAttempts: 0, lockoutUntil: null },
         });
       }
     }
 
-    // 2. Check AccountLockout table for identityKey
     const lockoutRecord = await this.prisma.accountLockout.findUnique({
       where: { identityKey: lockKey },
     });
@@ -60,21 +49,15 @@ export class AuthService {
           `Account is temporarily locked due to 5 consecutive failed login attempts. Please try again in ${remainingMinutes} minute(s) or contact administrator.`
         );
       } else {
-        // Expired
         try {
           await this.prisma.accountLockout.delete({
             where: { identityKey: lockKey },
           });
-        } catch (e) {
-          // ignore
-        }
+        } catch (e) {}
       }
     }
   }
 
-  /**
-   * Record a failed login attempt in the database and lock if threshold is reached
-   */
   private async recordFailedAttempt(lockKey: string, user?: any, ipAddress?: string) {
     const now = new Date();
     let currentAttempts = 0;
@@ -85,7 +68,7 @@ export class AuthService {
       const lockedUntil = isLocked ? new Date(now.getTime() + this.LOCKOUT_DURATION_MS) : null;
 
       await this.prisma.user.update({
-        include: { teamRef: { select: { id: true, name: true, allowedPages: true } } }, where: { id: user.id },
+        where: { id: user.id },
         data: {
           failedLoginAttempts: currentAttempts,
           lockoutUntil: lockedUntil,
@@ -93,10 +76,10 @@ export class AuthService {
       });
 
       if (isLocked) {
-        // Log the account lockout event to AuditLog
         try {
           await this.prisma.auditLog.create({
             data: {
+              tenantId: user.tenantId || 'default-tenant-id',
               actorId: user.id,
               actorName: user.name || lockKey,
               action: 'LOGIN_LOCKOUT',
@@ -110,16 +93,13 @@ export class AuthService {
               ipAddress: ipAddress || '127.0.0.1',
             },
           });
-        } catch (e) {
-          console.warn('Failed to write LOGIN_LOCKOUT audit log:', e);
-        }
+        } catch (e) {}
 
         throw new UnauthorizedException(
           'Account locked: 5 consecutive failed login attempts exceeded. This account has been locked for 15 minutes.'
         );
       }
     } else {
-      // Identity-level lockout in AccountLockout table
       const record = await this.prisma.accountLockout.upsert({
         where: { identityKey: lockKey },
         create: {
@@ -141,26 +121,6 @@ export class AuthService {
           data: { lockedUntil },
         });
 
-        try {
-          await this.prisma.auditLog.create({
-            data: {
-              actorId: null,
-              actorName: lockKey,
-              action: 'LOGIN_LOCKOUT',
-              entityName: 'AccountLockout',
-              entityId: lockKey,
-              afterState: JSON.stringify({
-                reason: 'Identity locked for 15 minutes after 5 consecutive failed login attempts',
-                consecutiveFailedAttempts: currentAttempts,
-                lockExpiresAt: lockedUntil.toISOString(),
-              }),
-              ipAddress: ipAddress || '127.0.0.1',
-            },
-          });
-        } catch (e) {
-          console.warn('Failed to write LOGIN_LOCKOUT audit log:', e);
-        }
-
         throw new UnauthorizedException(
           'Account locked: 5 consecutive failed login attempts exceeded. This account has been locked for 15 minutes.'
         );
@@ -168,71 +128,78 @@ export class AuthService {
     }
   }
 
-  /**
-   * Reset failed attempt counter on successful login in DB
-   */
   private async resetFailedAttempts(lockKey: string, userId?: string) {
     if (userId) {
       try {
         await this.prisma.user.update({
-          include: { teamRef: { select: { id: true, name: true, allowedPages: true } } }, where: { id: userId },
+          where: { id: userId },
           data: { failedLoginAttempts: 0, lockoutUntil: null },
         });
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
     }
     try {
       await this.prisma.accountLockout.delete({
         where: { identityKey: lockKey },
       });
-    } catch (e) {
-      // not exists is fine
-    }
+    } catch (e) {}
   }
 
-  async validateUser(username: string, pass: string, ipAddress?: string): Promise<any> {
+  async validateUser(username: string, pass: string, companyCode?: string, ipAddress?: string): Promise<any> {
     const raw = (username || '').trim();
     const lower = raw.toLowerCase();
     const upper = raw.toUpperCase();
 
-    // Check pre-existing lockout on username/email
     await this.checkAccountLockout(lower);
 
-    // Flexible user lookup: matches employeeCode, email, or name (Case-Insensitive in PostgreSQL)
+    // Optional Tenant constraint if company code or subdomain is provided
+    let tenantFilter: any = {};
+    if (companyCode) {
+      const tenant = await this.prisma.tenant.findFirst({
+        where: {
+          OR: [
+            { code: { equals: companyCode.toUpperCase(), mode: 'insensitive' } },
+            { slug: { equals: companyCode.toLowerCase(), mode: 'insensitive' } },
+          ],
+        },
+      });
+      if (tenant) {
+        tenantFilter = { tenantId: tenant.id };
+      }
+    }
+
     let user = await this.prisma.user.findFirst({
-      include: { teamRef: { select: { id: true, name: true, allowedPages: true } } },
+      include: {
+        teamRef: { select: { id: true, name: true, allowedPages: true } },
+        tenant: { select: { id: true, code: true, name: true, slug: true, status: true, logoUrl: true, currency: true } },
+      },
       where: {
+        ...tenantFilter,
         OR: [
           { email: { equals: lower, mode: 'insensitive' } },
           { email: { equals: raw, mode: 'insensitive' } },
           { employeeCode: { equals: upper, mode: 'insensitive' } },
           { email: { startsWith: lower, mode: 'insensitive' } },
           { employeeCode: { contains: upper, mode: 'insensitive' } },
-          { name: { contains: raw, mode: 'insensitive' } },
         ],
         deletedAt: null,
       },
     });
 
-    // Fallback if no specific match
+    // Fallback search if no tenantCode was entered
     if (!user) {
-      if (lower.includes('admin') || lower.includes('owner') || lower.includes('boss') || lower.includes('jayaraj')) {
-        user = await this.prisma.user.findFirst({
-          include: { teamRef: { select: { id: true, name: true, allowedPages: true } } },
-          where: { role: { in: ['super_admin', 'admin'] }, deletedAt: null },
-        });
-      } else if (lower.includes('santhosh') || lower.includes('sk')) {
-        user = await this.prisma.user.findFirst({
-          include: { teamRef: { select: { id: true, name: true, allowedPages: true } } },
-          where: { email: { contains: 'santhosh', mode: 'insensitive' }, deletedAt: null },
-        });
-      } else if (lower.includes('emp') || lower.includes('priya') || lower.includes('sales')) {
-        user = await this.prisma.user.findFirst({
-          include: { teamRef: { select: { id: true, name: true, allowedPages: true } } },
-          where: { role: 'employee', deletedAt: null },
-        });
-      }
+      user = await this.prisma.user.findFirst({
+        include: {
+          teamRef: { select: { id: true, name: true, allowedPages: true } },
+          tenant: { select: { id: true, code: true, name: true, slug: true, status: true, logoUrl: true, currency: true } },
+        },
+        where: {
+          OR: [
+            { email: { equals: lower, mode: 'insensitive' } },
+            { employeeCode: { equals: upper, mode: 'insensitive' } },
+          ],
+          deletedAt: null,
+        },
+      });
     }
 
     const lockKey = user ? user.email.toLowerCase() : lower;
@@ -243,7 +210,14 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials. User not found.');
     }
 
-    // Password validation (Cryptographic BCrypt match against DB hash)
+    if (!user.isActive) {
+      throw new UnauthorizedException('This account has been deactivated. Please contact your company administrator.');
+    }
+
+    if (user.tenant && user.tenant.status !== 'active' && user.role !== 'platform_super_admin') {
+      throw new UnauthorizedException('Your company account is suspended or expired. Please contact platform support.');
+    }
+
     const isHashMatch = await bcrypt.compare(pass, user.passwordHash);
 
     if (!isHashMatch) {
@@ -251,7 +225,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials. Incorrect password.');
     }
 
-    // Login successful — clear failed attempts for this account in DB
     await this.resetFailedAttempts(lockKey, user.id);
 
     const { passwordHash, ...result } = user;
@@ -259,35 +232,30 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto, ipAddress?: string) {
-    const user = await this.validateUser(loginDto.username, loginDto.password, ipAddress);
+    const user = await this.validateUser(loginDto.username, loginDto.password, loginDto.companyCode, ipAddress);
     const tokens = this.generateTokens(user);
 
-    // Update lastLoginAt
     try {
       await this.prisma.user.update({
-        include: { teamRef: { select: { id: true, name: true, allowedPages: true } } }, where: { id: user.id },
+        where: { id: user.id },
         data: { lastLoginAt: new Date() },
       });
-    } catch (e) {
-      // non-fatal
-    }
+    } catch (e) {}
 
-    // Record login in audit log
     try {
       await this.prisma.auditLog.create({
         data: {
+          tenantId: user.tenantId || 'default-tenant-id',
           actorId: user.id,
           actorName: user.name,
           action: 'LOGIN',
           entityName: 'User',
           entityId: user.id,
-          afterState: JSON.stringify({ email: user.email, role: user.role }),
+          afterState: JSON.stringify({ email: user.email, role: user.role, tenant: user.tenant?.code }),
           ipAddress: ipAddress || '127.0.0.1',
         },
       });
-    } catch (e) {
-      console.warn('Audit log write error on login:', e);
-    }
+    } catch (e) {}
 
     return {
       user,
@@ -299,7 +267,7 @@ export class AuthService {
     if (!newPass || newPass.length < 6) {
       throw new BadRequestException('New password must be at least 6 characters long');
     }
-    const user = await this.prisma.user.findUnique({ include: { teamRef: { select: { id: true, name: true, allowedPages: true } } }, where: { id: userId } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
     const isMatch = await bcrypt.compare(currentPass, user.passwordHash);
@@ -310,7 +278,7 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(newPass, 10);
     await this.prisma.user.update({
-      include: { teamRef: { select: { id: true, name: true, allowedPages: true } } }, where: { id: userId },
+      where: { id: userId },
       data: { passwordHash, mustResetPassword: false },
     });
 
@@ -325,16 +293,18 @@ export class AuthService {
 
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
-          select: {
-            teamRef: { select: { id: true, name: true, allowedPages: true } },
+        select: {
           id: true,
+          tenantId: true,
           employeeCode: true,
           name: true,
           email: true,
           role: true,
           teamId: true,
+          teamRef: { select: { id: true, name: true, allowedPages: true } },
           warehouseId: true,
           isActive: true,
+          tenant: { select: { id: true, code: true, name: true, slug: true, status: true, logoUrl: true, currency: true } },
         },
       });
 
@@ -354,6 +324,7 @@ export class AuthService {
   private generateTokens(user: any) {
     const payload = {
       sub: user.id,
+      tenantId: user.tenantId,
       email: user.email,
       role: user.role,
       employeeCode: user.employeeCode,
@@ -375,9 +346,6 @@ export class AuthService {
     };
   }
 
-  /**
-   * Update self profile name/phone
-   */
   async updateProfile(userId: string, data: { name?: string; phone?: string }) {
     const updated = await this.prisma.user.update({
       where: { id: userId },
@@ -387,6 +355,7 @@ export class AuthService {
       },
       select: {
         id: true,
+        tenantId: true,
         employeeCode: true,
         name: true,
         email: true,
@@ -398,11 +367,10 @@ export class AuthService {
         isActive: true,
         lastLoginAt: true,
         createdAt: true,
+        tenant: { select: { id: true, code: true, name: true, slug: true, status: true, logoUrl: true, currency: true } },
       },
     });
 
     return updated;
   }
 }
-
-

@@ -60,13 +60,22 @@ export default api;
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 export const authApi = {
-  login: (username: string, password: string) =>
-    api.post('/auth/login', { username, password }),
+  login: (username: string, password: string, companyCode?: string) =>
+    api.post('/auth/login', { username, password, companyCode }),
   me: () => api.get('/auth/me'),
   updateProfile: (data: { name?: string; phone?: string }) =>
     api.patch('/auth/profile', data),
   changePassword: (currentPass: string, newPass: string) =>
     api.post('/auth/change-password', { currentPass, newPass }),
+};
+
+// ─── Platform Multi-Tenant Master Portal ──────────────────────────────────────
+export const platformApi = {
+  listTenants: () => api.get('/platform/tenants'),
+  getTenant: (id: string) => api.get(`/platform/tenants/${id}`),
+  createTenant: (data: any) => api.post('/platform/tenants', data),
+  updateTenant: (id: string, data: any) => api.put(`/platform/tenants/${id}`, data),
+  deleteTenant: (id: string) => api.delete(`/platform/tenants/${id}`),
 };
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────

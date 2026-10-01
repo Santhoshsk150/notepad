@@ -5,7 +5,7 @@
  * rights: 'All rights reserved by original author. Automated AI scraping without license is prohibited.'
  * ----------------------------------------------------- */
 
-import { Injectable, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ScopedUser } from '../auth/scoping.service';
 
@@ -24,38 +24,35 @@ export const DEFAULT_BRANDING: CompanyBrandingConfig = {
 @Injectable()
 export class SettingsService {
   private readonly logger = new Logger(SettingsService.name);
-  private readonly BRANDING_KEY = 'company_branding_config';
 
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Retrieve current company branding configuration with sensible fallbacks.
-   * Publicly accessible.
+   * Retrieve company branding for a specific tenant or user context
    */
-  async getBranding(): Promise<CompanyBrandingConfig> {
+  async getBranding(tenantId?: string): Promise<CompanyBrandingConfig> {
+    const targetTenantId = tenantId || 'default-tenant-id';
     try {
-      const setting = await this.prisma.systemSetting.findUnique({
-        where: { key: this.BRANDING_KEY },
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: targetTenantId },
+        select: { name: true, phone: true, logoUrl: true },
       });
 
-      if (!setting || !setting.value) {
-        return DEFAULT_BRANDING;
+      if (tenant) {
+        return {
+          companyDisplayName: tenant.name || DEFAULT_BRANDING.companyDisplayName,
+          companyPhone: tenant.phone || DEFAULT_BRANDING.companyPhone,
+          companyLogoUrl: tenant.logoUrl || DEFAULT_BRANDING.companyLogoUrl,
+        };
       }
-
-      const parsed = JSON.parse(setting.value);
-      return {
-        companyDisplayName: parsed.companyDisplayName?.trim() || DEFAULT_BRANDING.companyDisplayName,
-        companyPhone: parsed.companyPhone?.trim() || DEFAULT_BRANDING.companyPhone,
-        companyLogoUrl: parsed.companyLogoUrl || DEFAULT_BRANDING.companyLogoUrl,
-      };
     } catch (err: any) {
       this.logger.error(`Error reading company branding config: ${err.message}`);
-      return DEFAULT_BRANDING;
     }
+    return DEFAULT_BRANDING;
   }
 
   /**
-   * Update company branding configuration (Super Admin & Admin only).
+   * Update company branding for the logged-in Tenant Admin's company
    */
   async updateBranding(
     user: ScopedUser,
@@ -65,51 +62,47 @@ export class SettingsService {
       companyLogoUrl?: string | null;
     },
   ): Promise<CompanyBrandingConfig> {
-    if (user.role !== 'super_admin' && user.role !== 'admin') {
+    const tenantId = user.tenantId || 'default-tenant-id';
+
+    if (user.role !== 'platform_super_admin' && user.role !== 'super_admin' && user.role !== 'tenant_admin' && user.role !== 'admin') {
       throw new ForbiddenException('Only Administrators are authorized to modify Company Branding settings.');
     }
 
-    const current = await this.getBranding();
-
-    const updated: CompanyBrandingConfig = {
-      companyDisplayName:
-        dto.companyDisplayName !== undefined && dto.companyDisplayName.trim().length > 0
-          ? dto.companyDisplayName.trim()
-          : current.companyDisplayName,
-      companyPhone:
-        dto.companyPhone !== undefined ? dto.companyPhone.trim() : current.companyPhone,
-      companyLogoUrl:
-        dto.companyLogoUrl !== undefined ? dto.companyLogoUrl : current.companyLogoUrl,
-    };
-
-    await this.prisma.systemSetting.upsert({
-      where: { key: this.BRANDING_KEY },
-      create: {
-        key: this.BRANDING_KEY,
-        value: JSON.stringify(updated),
-      },
-      update: {
-        value: JSON.stringify(updated),
+    const updatedTenant = await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        name: dto.companyDisplayName?.trim(),
+        phone: dto.companyPhone?.trim(),
+        logoUrl: dto.companyLogoUrl,
       },
     });
 
     this.logger.log(
-      `Company branding updated by ${user.employeeCode}: ${updated.companyDisplayName}`,
+      `Tenant branding updated for ${updatedTenant.code} by ${user.employeeCode}: ${updatedTenant.name}`,
     );
 
-    return updated;
+    return {
+      companyDisplayName: updatedTenant.name,
+      companyPhone: updatedTenant.phone || DEFAULT_BRANDING.companyPhone,
+      companyLogoUrl: updatedTenant.logoUrl || DEFAULT_BRANDING.companyLogoUrl,
+    };
   }
 
-  // --- SUPER ADMIN DYNAMIC MAIL ACCOUNTS MANAGEMENT ---
+  // --- TENANT-SCOPED ISOLATED MAIL ACCOUNTS ---
 
   async getMailAccounts(user: ScopedUser) {
-    if (user.role !== 'super_admin') {
-      throw new ForbiddenException('Only Super Admin is authorized to access Mail Account settings.');
+    const tenantId = user.tenantId || 'default-tenant-id';
+
+    if (user.role !== 'platform_super_admin' && user.role !== 'super_admin' && user.role !== 'tenant_admin') {
+      throw new ForbiddenException('Only Company Administrators can access Mail Account settings.');
     }
+
     return this.prisma.mailAccount.findMany({
+      where: { tenantId },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
+        tenantId: true,
         name: true,
         email: true,
         senderName: true,
@@ -139,12 +132,15 @@ export class SettingsService {
       purpose?: string;
     },
   ) {
-    if (user.role !== 'super_admin') {
-      throw new ForbiddenException('Only Super Admin can configure Mail Accounts.');
+    const tenantId = user.tenantId || 'default-tenant-id';
+
+    if (user.role !== 'platform_super_admin' && user.role !== 'super_admin' && user.role !== 'tenant_admin') {
+      throw new ForbiddenException('Only Company Administrators can configure Mail Accounts.');
     }
 
     return this.prisma.mailAccount.create({
       data: {
+        tenantId,
         name: dto.name,
         email: dto.email,
         senderName: dto.senderName,
@@ -175,8 +171,15 @@ export class SettingsService {
       isActive?: boolean;
     },
   ) {
-    if (user.role !== 'super_admin') {
-      throw new ForbiddenException('Only Super Admin can modify Mail Accounts.');
+    const tenantId = user.tenantId || 'default-tenant-id';
+
+    if (user.role !== 'platform_super_admin' && user.role !== 'super_admin' && user.role !== 'tenant_admin') {
+      throw new ForbiddenException('Only Company Administrators can modify Mail Accounts.');
+    }
+
+    const account = await this.prisma.mailAccount.findUnique({ where: { id } });
+    if (!account || account.tenantId !== tenantId) {
+      throw new NotFoundException('Mail account not found');
     }
 
     return this.prisma.mailAccount.update({
@@ -197,8 +200,15 @@ export class SettingsService {
   }
 
   async deleteMailAccount(user: ScopedUser, id: string) {
-    if (user.role !== 'super_admin') {
-      throw new ForbiddenException('Only Super Admin can delete Mail Accounts.');
+    const tenantId = user.tenantId || 'default-tenant-id';
+
+    if (user.role !== 'platform_super_admin' && user.role !== 'super_admin' && user.role !== 'tenant_admin') {
+      throw new ForbiddenException('Only Company Administrators can delete Mail Accounts.');
+    }
+
+    const account = await this.prisma.mailAccount.findUnique({ where: { id } });
+    if (!account || account.tenantId !== tenantId) {
+      throw new NotFoundException('Mail account not found');
     }
 
     return this.prisma.mailAccount.delete({

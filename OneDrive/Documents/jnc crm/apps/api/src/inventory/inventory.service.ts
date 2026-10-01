@@ -181,9 +181,12 @@ export class InventoryService {
 
   async getWarehouses(user: ScopedUser) {
     const where: any = { deletedAt: null };
-    const scope = this.scopingService.getInventoryScope(user);
+    const scope: any = this.scopingService.getInventoryScope(user);
     if (scope.warehouseId) {
       where.id = scope.warehouseId;
+    }
+    if (scope.tenantId) {
+      where.tenantId = scope.tenantId;
     }
     return this.prisma.warehouse.findMany({
       where,
@@ -666,8 +669,8 @@ export class InventoryService {
         }
 
         // 3. Upsert SKU (restore if soft-deleted)
-        const existingSku = await this.prisma.sku.findUnique({
-          where: { skuCode },
+        const existingSku = await this.prisma.sku.findFirst({
+          where: { skuCode, tenantId: user.tenantId || 'default-tenant-id' },
         });
 
         let skuId: string;

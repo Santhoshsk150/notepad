@@ -1,0 +1,618 @@
+import React, { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Building2, Plus, Users, Shield, CheckCircle2, AlertTriangle,
+  Search, ExternalLink, RefreshCw, KeyRound, Globe, Mail, Phone,
+  ChevronRight, X, Copy, Check, Power, Settings
+} from 'lucide-react';
+import { platformApi } from '../services/api';
+import { Tenant } from '../types';
+import { usePopup } from '../contexts/PopupContext';
+import { format } from 'date-fns';
+
+export default function PlatformCompaniesPage() {
+  const { showAlert, showConfirm } = usePopup();
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  // Create Modal State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({
+    code: '',
+    name: '',
+    slug: '',
+    planTier: 'standard',
+    maxUsers: 10,
+    adminName: '',
+    adminEmail: '',
+    adminPhone: '',
+    adminPassword: '',
+    city: 'Bengaluru',
+    state: 'Karnataka',
+    gstin: '',
+  });
+
+  // Created Tenant Success Modal State
+  const [createdResult, setCreatedResult] = useState<{
+    tenant: Tenant;
+    adminUser: {
+      employeeCode: string;
+      name: string;
+      email: string;
+      tempPassword: string;
+    };
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const fetchTenants = async () => {
+    try {
+      setLoading(true);
+      const { data } = await platformApi.listTenants();
+      setTenants(data || []);
+    } catch (err: any) {
+      showAlert('Error loading companies', err?.response?.data?.message || 'Failed to fetch customer companies', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTenants();
+  }, []);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.code || !form.name || !form.adminEmail || !form.adminName) {
+      showAlert('Missing Information', 'Company code, name, and Admin details are required.', 'warning');
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const { data } = await platformApi.createTenant(form);
+      setShowCreateModal(false);
+      setCreatedResult(data);
+      fetchTenants();
+    } catch (err: any) {
+      showAlert('Failed to Provision Company', err?.response?.data?.message || 'Error occurred while creating company', 'error');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleToggleStatus = async (tenant: Tenant) => {
+    const nextStatus = tenant.status === 'active' ? 'suspended' : 'active';
+    showConfirm(
+      `Are you sure you want to ${nextStatus === 'active' ? 'activate' : 'suspend'} ${tenant.name}? ${nextStatus === 'suspended' ? 'All users under this company will be blocked from logging in.' : ''}`,
+      async () => {
+        try {
+          await platformApi.updateTenant(tenant.id, { status: nextStatus });
+          showAlert('Updated', `${tenant.name} status set to ${nextStatus}.`, 'success');
+          fetchTenants();
+        } catch (err: any) {
+          showAlert('Update Failed', err?.response?.data?.message || 'Could not update status', 'error');
+        }
+      },
+      `${nextStatus === 'active' ? 'Activate' : 'Suspend'} Company Workspace`,
+      nextStatus === 'suspended' ? 'Suspend' : 'Activate'
+    );
+  };
+
+  const filtered = tenants.filter((t) => {
+    const matchesSearch =
+      !search ||
+      t.name.toLowerCase().includes(search.toLowerCase()) ||
+      t.code.toLowerCase().includes(search.toLowerCase()) ||
+      t.email?.toLowerCase().includes(search.toLowerCase());
+    const matchesStatus = !statusFilter || t.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-purple-600/10 text-purple-600 dark:text-purple-400">
+              <Building2 size={24} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
+                Company Workspaces (Multi-Tenant SaaS)
+              </h1>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Provision isolated customer companies, allocate user licenses, and create Tenant Admin credentials.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={() => {
+            setForm({
+              code: '',
+              name: '',
+              slug: '',
+              planTier: 'standard',
+              maxUsers: 10,
+              adminName: '',
+              adminEmail: '',
+              adminPhone: '',
+              adminPassword: '',
+              city: 'Bengaluru',
+              state: 'Karnataka',
+              gstin: '',
+            });
+            setShowCreateModal(true);
+          }}
+          className="btn btn-primary flex items-center gap-2"
+        >
+          <Plus size={16} />
+          <span>Provision New Company</span>
+        </button>
+      </div>
+
+      {/* Metrics Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <div className="card p-4 flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Companies</div>
+            <div className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{tenants.length}</div>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center font-bold">
+            <Building2 size={20} />
+          </div>
+        </div>
+
+        <div className="card p-4 flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active Workspaces</div>
+            <div className="text-2xl font-bold text-emerald-600 mt-1">
+              {tenants.filter((t) => t.status === 'active').length}
+            </div>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold">
+            <CheckCircle2 size={20} />
+          </div>
+        </div>
+
+        <div className="card p-4 flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total User Seats</div>
+            <div className="text-2xl font-bold text-indigo-600 mt-1">
+              {tenants.reduce((acc, t) => acc + (t.maxUsers || 0), 0)}
+            </div>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center font-bold">
+            <Users size={20} />
+          </div>
+        </div>
+
+        <div className="card p-4 flex items-center justify-between">
+          <div>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Suspended</div>
+            <div className="text-2xl font-bold text-rose-600 mt-1">
+              {tenants.filter((t) => t.status === 'suspended').length}
+            </div>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 flex items-center justify-center font-bold">
+            <AlertTriangle size={20} />
+          </div>
+        </div>
+      </div>
+
+      {/* Filter Bar */}
+      <div className="card p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="relative flex-1 w-full">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            className="input pl-10 w-full text-xs"
+            placeholder="Search by company name, org code (e.g. VERTEX, JNC), or email..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <select
+            className="input text-xs w-full sm:w-40"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="suspended">Suspended</option>
+          </select>
+
+          <button
+            onClick={fetchTenants}
+            className="btn btn-secondary p-2.5 shrink-0"
+            title="Refresh list"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </div>
+      </div>
+
+      {/* Company List Table */}
+      <div className="card overflow-hidden p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 dark:bg-[#1E2230] border-b border-slate-200 dark:border-[#2A3042] text-slate-600 dark:text-slate-300 font-semibold uppercase tracking-wider">
+              <tr>
+                <th className="py-3 px-4">Org Code & Name</th>
+                <th className="py-3 px-4">Plan & Licenses</th>
+                <th className="py-3 px-4">Records & Usage</th>
+                <th className="py-3 px-4">Mail Setup</th>
+                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4">Created On</th>
+                <th className="py-3 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 dark:divide-[#2A3042]">
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                    <RefreshCw size={20} className="animate-spin mx-auto mb-2 text-crm-blue" />
+                    Loading workspaces...
+                  </td>
+                </tr>
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                    No company workspaces found matching your search.
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((tenant) => (
+                  <tr key={tenant.id} className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02] transition-colors">
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 font-bold flex items-center justify-center shrink-0 border border-purple-200 dark:border-purple-800/40">
+                          {tenant.code.slice(0, 3)}
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-900 dark:text-white text-sm">
+                            {tenant.name}
+                          </div>
+                          <div className="text-[11px] font-mono text-purple-600 dark:text-purple-400 font-semibold">
+                            Code: {tenant.code} • slug: {tenant.slug}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="py-3.5 px-4">
+                      <div>
+                        <span className="capitalize font-semibold text-slate-900 dark:text-white">
+                          {tenant.planTier}
+                        </span>
+                        <div className="text-[11px] text-slate-500">
+                          Max Users: <strong className="text-slate-700 dark:text-slate-300">{tenant.maxUsers}</strong>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="py-3.5 px-4">
+                      <div className="space-y-0.5 text-[11px] text-slate-600 dark:text-slate-400">
+                        <div>Users: <strong>{tenant._count?.users || 0}</strong> / {tenant.maxUsers}</div>
+                        <div>Leads: <strong>{tenant._count?.leads || 0}</strong> • Orders: <strong>{tenant._count?.orders || 0}</strong></div>
+                        <div>Invoices: <strong>{tenant._count?.invoices || 0}</strong> • SKUs: <strong>{tenant._count?.skus || 0}</strong></div>
+                      </div>
+                    </td>
+
+                    <td className="py-3.5 px-4">
+                      {tenant._count?.mailAccounts && tenant._count.mailAccounts > 0 ? (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">
+                          <CheckCircle2 size={12} /> Custom SMTP Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
+                          In-App Only (Safe)
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="py-3.5 px-4">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold capitalize ${
+                          tenant.status === 'active'
+                            ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
+                            : 'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300'
+                        }`}
+                      >
+                        {tenant.status}
+                      </span>
+                    </td>
+
+                    <td className="py-3.5 px-4 text-slate-500 font-mono text-[11px]">
+                      {tenant.createdAt ? format(new Date(tenant.createdAt), 'dd MMM yyyy') : 'N/A'}
+                    </td>
+
+                    <td className="py-3.5 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => handleToggleStatus(tenant)}
+                          className={`btn p-1.5 rounded-lg text-xs font-semibold ${
+                            tenant.status === 'active'
+                              ? 'bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-900/20'
+                              : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20'
+                          }`}
+                          title={tenant.status === 'active' ? 'Suspend Workspace' : 'Activate Workspace'}
+                        >
+                          <Power size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Provision New Company Modal */}
+      <AnimatePresence>
+        {showCreateModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-[#181B26] border border-slate-200 dark:border-[#2A3042] rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-[#2A3042] bg-slate-50 dark:bg-[#1E2230]">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600">
+                    <Building2 size={18} />
+                  </div>
+                  <h2 className="font-bold text-slate-900 dark:text-white text-base">
+                    Provision New Customer Company
+                  </h2>
+                </div>
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-white/5"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreate} className="p-4 overflow-y-auto space-y-4 flex-1">
+                <div className="bg-purple-50 dark:bg-purple-950/30 p-3 rounded-xl border border-purple-200 dark:border-purple-800/40 text-xs text-purple-800 dark:text-purple-300">
+                  This will create an isolated workspace for the company and automatically create their primary <strong>Tenant Admin</strong> account.
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Company Org Code *</label>
+                    <input
+                      type="text"
+                      className="input uppercase font-mono tracking-wider text-xs"
+                      placeholder="e.g. VERTEX, ACME"
+                      value={form.code}
+                      onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '') })}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Company Display Name *</label>
+                    <input
+                      type="text"
+                      className="input text-xs"
+                      placeholder="e.g. Vertex Solutions Pvt Ltd"
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Plan Tier</label>
+                    <select
+                      className="input text-xs"
+                      value={form.planTier}
+                      onChange={(e) => setForm({ ...form, planTier: e.target.value })}
+                    >
+                      <option value="starter">Starter (5 Users)</option>
+                      <option value="standard">Standard (10 Users)</option>
+                      <option value="professional">Professional (25 Users)</option>
+                      <option value="enterprise">Enterprise (100 Users)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="label">Max User Licenses</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={1000}
+                      className="input text-xs"
+                      value={form.maxUsers}
+                      onChange={(e) => setForm({ ...form, maxUsers: Number(e.target.value) })}
+                    />
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-200 dark:border-[#2A3042] pt-3">
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-2">
+                    Primary Tenant Admin Credentials
+                  </h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">Admin Full Name *</label>
+                      <input
+                        type="text"
+                        className="input text-xs"
+                        placeholder="e.g. Ramesh Patel"
+                        value={form.adminName}
+                        onChange={(e) => setForm({ ...form, adminName: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="label">Admin Email Address *</label>
+                      <input
+                        type="email"
+                        className="input text-xs"
+                        placeholder="ramesh@vertexsolutions.in"
+                        value={form.adminEmail}
+                        onChange={(e) => setForm({ ...form, adminEmail: e.target.value })}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                    <div>
+                      <label className="label">Admin Phone</label>
+                      <input
+                        type="text"
+                        className="input text-xs"
+                        placeholder="+91 9845012345"
+                        value={form.adminPhone}
+                        onChange={(e) => setForm({ ...form, adminPhone: e.target.value })}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="label">Initial Password (Optional)</label>
+                      <input
+                        type="text"
+                        className="input text-xs font-mono"
+                        placeholder="Leave blank for auto-generate"
+                        value={form.adminPassword}
+                        onChange={(e) => setForm({ ...form, adminPassword: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-200 dark:border-[#2A3042] pt-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">GSTIN (Optional)</label>
+                      <input
+                        type="text"
+                        className="input uppercase text-xs font-mono"
+                        placeholder="29ABCDE1234F1Z5"
+                        value={form.gstin}
+                        onChange={(e) => setForm({ ...form, gstin: e.target.value.toUpperCase() })}
+                      />
+                    </div>
+                    <div>
+                      <label className="label">City</label>
+                      <input
+                        type="text"
+                        className="input text-xs"
+                        value={form.city}
+                        onChange={(e) => setForm({ ...form, city: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-200 dark:border-[#2A3042] flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className="btn btn-secondary text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creating}
+                    className="btn btn-primary text-xs flex items-center gap-1.5"
+                  >
+                    {creating ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
+                    <span>{creating ? 'Provisioning...' : 'Create Company Workspace'}</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Created Tenant Success Modal */}
+      <AnimatePresence>
+        {createdResult && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-[#181B26] border border-slate-200 dark:border-[#2A3042] rounded-2xl w-full max-w-lg shadow-2xl p-6 text-slate-900 dark:text-white"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center mb-4">
+                <CheckCircle2 size={24} />
+              </div>
+
+              <h2 className="text-lg font-bold">Company Workspace Provisioned!</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                The isolated company tenant and Tenant Admin account are active. Share these credentials with the customer:
+              </p>
+
+              <div className="bg-slate-50 dark:bg-[#1E2230] p-4 rounded-xl border border-slate-200 dark:border-[#2A3042] my-4 space-y-2 text-xs font-mono">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Company:</span>
+                  <span className="font-bold">{createdResult.tenant.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Company Code:</span>
+                  <span className="font-bold text-purple-600">{createdResult.tenant.code}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Admin Username:</span>
+                  <span className="font-bold">{createdResult.adminUser.employeeCode}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Admin Email:</span>
+                  <span className="font-bold">{createdResult.adminUser.email}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">One-Time Password:</span>
+                  <span className="font-bold text-emerald-600">{createdResult.adminUser.tempPassword}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    const text = `Company: ${createdResult.tenant.name}\nCompany Code: ${createdResult.tenant.code}\nLogin URL: http://localhost:5173/login\nAdmin Username: ${createdResult.adminUser.employeeCode}\nAdmin Email: ${createdResult.adminUser.email}\nTemporary Password: ${createdResult.adminUser.tempPassword}`;
+                    navigator.clipboard.writeText(text);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2500);
+                  }}
+                  className="btn btn-secondary text-xs flex items-center gap-1.5"
+                >
+                  {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                  <span>{copied ? 'Copied to Clipboard!' : 'Copy Credentials'}</span>
+                </button>
+
+                <button
+                  onClick={() => setCreatedResult(null)}
+                  className="btn btn-primary text-xs"
+                >
+                  Done
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

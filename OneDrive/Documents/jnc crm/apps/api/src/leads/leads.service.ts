@@ -24,9 +24,6 @@ export class LeadsService {
     private auditService: AuditService,
   ) {}
 
-  /**
-   * Normalize phone number to standard format (strip whitespace, symbols, standard 10/12 digits)
-   */
   private normalizePhone(phone: string): string {
     const cleaned = phone.replace(/[^0-9]/g, '');
     if (cleaned.length === 10) return `91${cleaned}`;
@@ -34,13 +31,10 @@ export class LeadsService {
     return cleaned;
   }
 
-  /**
-   * Round-robin assignment strictly among active sales employees (role = employee)
-   * Admins and Super Admins are excluded from sales quota pools.
-   */
-  async getNextAssigneeId(): Promise<string | null> {
+  async getNextAssigneeId(tenantId: string): Promise<string | null> {
     let employees = await this.prisma.user.findMany({
       where: {
+        tenantId,
         role: 'employee',
         isActive: true,
         deletedAt: null,
@@ -48,11 +42,11 @@ export class LeadsService {
       orderBy: { employeeCode: 'asc' },
     });
 
-    // Fallback only if no active sales employees exist in the organization
     if (employees.length === 0) {
       employees = await this.prisma.user.findMany({
         where: {
-          role: { in: ['sub_admin', 'admin'] },
+          tenantId,
+          role: { in: ['sub_admin', 'tenant_admin', 'admin'] },
           isActive: true,
           deletedAt: null,
         },
@@ -66,20 +60,16 @@ export class LeadsService {
     return assignee.id;
   }
 
-  /**
-   * Create a new Lead with 30-day de-duplication and round-robin assignment
-   */
   async createLead(dto: CreateLeadDto, actor?: ScopedUser) {
+    const tenantId = actor?.tenantId || 'default-tenant-id';
     const normPhone = this.normalizePhone(dto.customerPhone);
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    // Strict De-duplication check: Disallow duplicates with clear error
     const existingLead = await this.prisma.lead.findFirst({
       where: {
+        tenantId,
         OR: [
           { customerPhone: { contains: normPhone.slice(-10) } },
-          dto.customerEmail ? { customerEmail: { equals: dto.customerEmail.trim() } } : undefined,
+          dto.customerEmail ? { customerEmail: { equals: dto.customerEmail.trim(), mode: 'insensitive' } } : undefined,
         ].filter(Boolean) as any,
         deletedAt: null,
       },
@@ -95,18 +85,18 @@ export class LeadsService {
 
     let assignedToId = dto.assignedToId;
     if (!assignedToId) {
-      assignedToId = await this.getNextAssigneeId();
+      assignedToId = await this.getNextAssigneeId(tenantId);
     }
 
-    // Auto-create or link Company if specified
     let companyId: string | null = null;
     if (dto.companyName) {
       let company = await this.prisma.company.findFirst({
-        where: { name: { equals: dto.companyName.trim() } },
+        where: { tenantId, name: { equals: dto.companyName.trim(), mode: 'insensitive' } },
       });
       if (!company) {
         company = await this.prisma.company.create({
           data: {
+            tenantId,
             name: dto.companyName.trim(),
             city: dto.city,
           },
@@ -115,12 +105,14 @@ export class LeadsService {
       companyId = company.id;
     }
 
-    // Auto-generate lead number
-    const count = await this.prisma.lead.count();
-    const leadNumber = `JNC-LD-${String(count + 1).padStart(5, '0')}`;
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { code: true } });
+    const prefix = tenant?.code ? `${tenant.code}-LD` : 'LD';
+    const count = await this.prisma.lead.count({ where: { tenantId } });
+    const leadNumber = `${prefix}-${String(count + 1).padStart(5, '0')}`;
 
     const lead = await this.prisma.lead.create({
       data: {
+        tenantId,
         leadNumber,
         source: dto.source || 'manual',
         status: 'new',
@@ -147,9 +139,9 @@ export class LeadsService {
       },
     });
 
-    // Create In-App Notification task for the assigned employee (NO WhatsApp/SMS sent to customer)
     if (assignedToId) {
       await this.notificationsService.createInAppTask({
+        tenantId,
         leadId: lead.id,
         userId: assignedToId,
         title: `New Lead ${lead.leadNumber} assigned: ${lead.customerName}`,
@@ -157,10 +149,10 @@ export class LeadsService {
       });
     }
 
-    // Record in Audit Log
     await this.auditService.log({
+      tenantId,
       actorId: actor?.id,
-      actorName: actor ? 'User' : 'System Webhook',
+      actorName: actor ? actor.employeeCode : 'System Webhook',
       action: 'CREATE',
       entityName: 'Lead',
       entityId: lead.id,
@@ -170,17 +162,13 @@ export class LeadsService {
     return lead;
   }
 
-  /**
-   * Evaluate raw spreadsheet rows for import preview with:
-   * 1. 30-day DB duplicate detection
-   * 2. Intra-sheet duplicate detection (same phone in two rows of same file)
-   */
   async previewImport(records: any[], user: ScopedUser) {
+    const tenantId = user.tenantId || 'default-tenant-id';
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
     const evaluatedRows = [];
-    const seenInSheet = new Map<string, number>(); // key: last 10 digits, value: row index
+    const seenInSheet = new Map<string, number>();
     let duplicateCount = 0;
     let validCount = 0;
 
@@ -198,7 +186,7 @@ export class LeadsService {
       const source = (r.source || r.Source || 'manual').toString().trim().toLowerCase();
 
       if (!customerName && !customerPhone && !companyName) {
-        continue; // skip empty rows
+        continue;
       }
 
       const phoneKey = customerPhone.slice(-10);
@@ -206,15 +194,14 @@ export class LeadsService {
       let duplicateReason = '';
       let matchedLead = null;
 
-      // 1. Check intra-sheet duplicate first
       if (phoneKey && seenInSheet.has(phoneKey)) {
         isDuplicate = true;
         duplicateReason = `Duplicate of Row ${seenInSheet.get(phoneKey)} in this sheet`;
         duplicateCount++;
       } else if (customerPhone && customerPhone.length >= 7) {
-        // 2. Check 30-day duplicate against DB
         matchedLead = await this.prisma.lead.findFirst({
           where: {
+            tenantId,
             customerPhone: { contains: phoneKey },
             createdAt: { gte: thirtyDaysAgo },
             deletedAt: null,
@@ -268,9 +255,6 @@ export class LeadsService {
     };
   }
 
-  /**
-   * Retrieve leads with row-level RBAC filtering and multi-criteria filters
-   */
   async findAll(user: ScopedUser, query: {
     status?: string;
     source?: string;
@@ -307,13 +291,13 @@ export class LeadsService {
     }
     if (query.search) {
       where.OR = [
-        { leadNumber: { contains: query.search } },
-        { customerName: { contains: query.search } },
-        { customerPhone: { contains: query.search } },
-        { customerEmail: { contains: query.search } },
-        { city: { contains: query.search } },
-        { productCategory: { contains: query.search } },
-        { productName: { contains: query.search } },
+        { leadNumber: { contains: query.search, mode: 'insensitive' } },
+        { customerName: { contains: query.search, mode: 'insensitive' } },
+        { customerPhone: { contains: query.search, mode: 'insensitive' } },
+        { customerEmail: { contains: query.search, mode: 'insensitive' } },
+        { city: { contains: query.search, mode: 'insensitive' } },
+        { productCategory: { contains: query.search, mode: 'insensitive' } },
+        { productName: { contains: query.search, mode: 'insensitive' } },
       ];
     }
 
@@ -351,12 +335,10 @@ export class LeadsService {
     };
   }
 
-  /**
-   * Get single lead by ID with full activity history & quotes
-   */
   async findOne(id: string, user: ScopedUser) {
-    const lead = await this.prisma.lead.findUnique({
-      where: { id },
+    const tenantId = user.tenantId || 'default-tenant-id';
+    const lead = await this.prisma.lead.findFirst({
+      where: { id, tenantId, deletedAt: null },
       include: {
         assignedTo: {
           select: { id: true, name: true, employeeCode: true, email: true },
@@ -381,11 +363,10 @@ export class LeadsService {
       },
     });
 
-    if (!lead || lead.deletedAt) {
+    if (!lead) {
       throw new NotFoundException('Lead not found');
     }
 
-    // Check row-level access for employee
     if (user.role === 'employee' && lead.assignedToId !== user.id) {
       throw new ForbiddenException('You do not have permission to view this lead');
     }
@@ -393,9 +374,6 @@ export class LeadsService {
     return lead;
   }
 
-  /**
-   * Update lead stage / status
-   */
   async updateStatus(id: string, dto: UpdateLeadStatusDto, user: ScopedUser) {
     const lead = await this.findOne(id, user);
 
@@ -413,7 +391,6 @@ export class LeadsService {
       },
     });
 
-    // Record in StatusHistory
     await this.prisma.statusHistory.create({
       data: {
         entityType: 'lead',
@@ -425,7 +402,6 @@ export class LeadsService {
       },
     });
 
-    // Add LeadActivity log
     await this.prisma.leadActivity.create({
       data: {
         leadId: id,
@@ -438,8 +414,8 @@ export class LeadsService {
       },
     });
 
-    // Audit Log
     await this.auditService.log({
+      tenantId: user.tenantId || 'default-tenant-id',
       actorId: user.id,
       actorName: user.employeeCode,
       action: 'STATUS_CHANGE',
@@ -452,38 +428,31 @@ export class LeadsService {
     return updated;
   }
 
-  /**
-   * Add manual activity (Call, Email, Note, Meeting, Task)
-   */
   async addActivity(leadId: string, dto: CreateLeadActivityDto & { sendEmailToCustomer?: boolean }, user: ScopedUser) {
-    const lead = await this.findOne(leadId, user); // checks authorization
+    const lead = await this.findOne(leadId, user);
+    const tenantId = user.tenantId || 'default-tenant-id';
 
-    // Only super_admin is authorized to trigger direct outbound email to clients
     if (dto.type === 'email' && dto.sendEmailToCustomer && lead.customerEmail) {
-      if (user.role !== 'super_admin') {
-        throw new ForbiddenException('Only Super Admin is authorized to send direct outbound emails from the CRM.');
+      if (user.role !== 'platform_super_admin' && user.role !== 'super_admin' && user.role !== 'tenant_admin' && user.role !== 'admin') {
+        throw new ForbiddenException('Only Administrators are authorized to send direct outward emails from the CRM.');
       }
       try {
-        const branding = await this.notificationsService.getBranding();
+        const branding = await this.notificationsService.getBranding(tenantId);
         await this.notificationsService.sendEmail({
+          tenantId,
           to: lead.customerEmail,
           subject: dto.title || `Update regarding your inquiry with ${branding.companyDisplayName}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
               <div style="background: #2E5EFF; color: white; padding: 16px; border-radius: 6px; text-align: center; margin-bottom: 20px;">
                 <h2 style="margin: 0;">${branding.companyDisplayName}</h2>
-                <p style="margin: 4px 0 0 0; font-size: 12px;">Customer Support & Technical Advisory</p>
               </div>
               <p>Dear <strong>${lead.customerName}</strong>,</p>
               <div style="background: #f8fafc; padding: 16px; border-radius: 6px; border-left: 4px solid #2E5EFF; margin: 16px 0; font-size: 14px; line-height: 1.6; color: #1e293b;">
                 ${(dto.description || '').replace(/\n/g, '<br/>')}
               </div>
               <p style="font-size: 13px; color: #64748b;">
-                Reference Inquiry: <strong>${lead.leadNumber}</strong> (${lead.productCategory || 'Security / PA Systems'})
-              </p>
-              <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-              <p style="font-size: 12px; color: #94a3b8;">
-                Sent by ${user.employeeCode} • ${branding.companyDisplayName}${branding.companyPhone ? ` • Phone: ${branding.companyPhone}` : ''}
+                Reference Inquiry: <strong>${lead.leadNumber}</strong>
               </p>
             </div>
           `,
@@ -491,7 +460,7 @@ export class LeadsService {
           relatedEntityId: leadId,
         });
       } catch (err: any) {
-        this.logger.error(`Failed to send direct lead email to ${lead.customerEmail}: ${err.message}`);
+        this.logger.error(`Failed to send direct lead email: ${err.message}`);
       }
     }
 
@@ -516,16 +485,17 @@ export class LeadsService {
     return activity;
   }
 
-  /**
-   * Commit confirmed rows to database with round-robin fallback and LeadActivity audit trail
-   */
   async commitImport(records: any[], user: ScopedUser) {
+    const tenantId = user.tenantId || 'default-tenant-id';
     const results = {
       totalRows: records.length,
       importedCount: 0,
       errors: [] as string[],
       createdLeadNumbers: [] as string[],
     };
+
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { code: true } });
+    const prefix = tenant?.code ? `${tenant.code}-LD` : 'LD';
 
     for (let i = 0; i < records.length; i++) {
       const r = records[i];
@@ -538,9 +508,10 @@ export class LeadsService {
         const normPhone = this.normalizePhone(r.customerPhone);
         const existing = await this.prisma.lead.findFirst({
           where: {
+            tenantId,
             OR: [
               { customerPhone: { contains: normPhone.slice(-10) } },
-              r.customerEmail ? { customerEmail: { equals: r.customerEmail.trim() } } : undefined,
+              r.customerEmail ? { customerEmail: { equals: r.customerEmail.trim(), mode: 'insensitive' } } : undefined,
             ].filter(Boolean) as any,
             deletedAt: null,
           },
@@ -551,15 +522,15 @@ export class LeadsService {
           continue;
         }
 
-        // 1. Resolve Company
         let companyId: string | null = null;
         if (r.companyName) {
           let comp = await this.prisma.company.findFirst({
-            where: { name: { equals: r.companyName.trim() } },
+            where: { tenantId, name: { equals: r.companyName.trim(), mode: 'insensitive' } },
           });
           if (!comp) {
             comp = await this.prisma.company.create({
               data: {
+                tenantId,
                 name: r.companyName.trim(),
                 city: r.city,
               },
@@ -568,15 +539,15 @@ export class LeadsService {
           companyId = comp.id;
         }
 
-        // 2. Resolve Assigned Employee (specified or round-robin)
         let assignedToId: string | null = null;
         if (r.assignedTo) {
           const matchedUser = await this.prisma.user.findFirst({
             where: {
+              tenantId,
               OR: [
-                { name: { contains: r.assignedTo } },
-                { employeeCode: { equals: r.assignedTo } },
-                { email: { equals: r.assignedTo } },
+                { name: { contains: r.assignedTo, mode: 'insensitive' } },
+                { employeeCode: { equals: r.assignedTo, mode: 'insensitive' } },
+                { email: { equals: r.assignedTo, mode: 'insensitive' } },
               ],
               isActive: true,
               deletedAt: null,
@@ -588,16 +559,15 @@ export class LeadsService {
         }
 
         if (!assignedToId) {
-          assignedToId = await this.getNextAssigneeId();
+          assignedToId = await this.getNextAssigneeId(tenantId);
         }
 
-        // 3. Generate Lead Number
-        const count = await this.prisma.lead.count();
-        const leadNumber = `JNC-LD-${String(count + 1).padStart(5, '0')}`;
+        const count = await this.prisma.lead.count({ where: { tenantId } });
+        const leadNumber = `${prefix}-${String(count + 1).padStart(5, '0')}`;
 
-        // 4. Create Lead
         const lead = await this.prisma.lead.create({
           data: {
+            tenantId,
             leadNumber,
             source: r.source || 'manual',
             status: 'new',
@@ -614,7 +584,6 @@ export class LeadsService {
           },
         });
 
-        // 5. Create LeadActivity Audit Entry
         await this.prisma.leadActivity.create({
           data: {
             leadId: lead.id,
@@ -637,20 +606,20 @@ export class LeadsService {
     return results;
   }
 
-  /**
-   * Share a lead with a sales colleague
-   */
   async shareLead(leadId: string, targetUserId: string, actor: ScopedUser) {
-    const lead = await this.prisma.lead.findUnique({
-      where: { id: leadId },
+    const tenantId = actor.tenantId || 'default-tenant-id';
+    const lead = await this.prisma.lead.findFirst({
+      where: { id: leadId, tenantId },
     });
 
     if (!lead) {
-      throw new NotFoundException(`Lead with ID ${leadId} not found.`);
+      throw new NotFoundException(`Lead with ID ${leadId} not found in your company.`);
     }
 
     if (
+      actor.role !== 'platform_super_admin' &&
       actor.role !== 'super_admin' &&
+      actor.role !== 'tenant_admin' &&
       actor.role !== 'admin' &&
       lead.assignedToId !== actor.id
     ) {
@@ -665,6 +634,7 @@ export class LeadsService {
         },
       },
       create: {
+        tenantId,
         leadId,
         userId: targetUserId,
         sharedById: actor.id,
@@ -673,6 +643,7 @@ export class LeadsService {
     });
 
     await this.auditService.log({
+      tenantId,
       actorId: actor.id,
       action: 'SHARE',
       entityName: 'Lead',

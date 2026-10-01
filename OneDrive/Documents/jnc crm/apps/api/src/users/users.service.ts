@@ -17,7 +17,7 @@ export interface CreateUserDto {
   name: string;
   email: string;
   phone: string;
-  role: 'admin' | 'sub_admin' | 'employee' | 'store_manager' | 'project_manager' | 'developer_lead' | 'developer';
+  role: 'tenant_admin' | 'admin' | 'sub_admin' | 'employee' | 'store_manager' | 'project_manager' | 'developer_lead' | 'developer';
   teamId?: string;
   warehouseId?: string;
 }
@@ -25,7 +25,7 @@ export interface CreateUserDto {
 export interface UpdateUserDto {
   name?: string;
   phone?: string;
-  role?: 'admin' | 'sub_admin' | 'employee' | 'store_manager' | 'project_manager' | 'developer_lead' | 'developer';
+  role?: 'tenant_admin' | 'admin' | 'sub_admin' | 'employee' | 'store_manager' | 'project_manager' | 'developer_lead' | 'developer';
   teamId?: string;
   warehouseId?: string;
   isActive?: boolean;
@@ -41,25 +41,30 @@ export class UsersService {
     private auditService: AuditService,
   ) {}
 
-  /**
-   * Generates sequential employee code per role prefix
-   * JNC-ADM-xxx, JNC-PM-xxx, JNC-LEAD-xxx, JNC-DEV-xxx
-   */
-  async generateEmployeeCode(role: string): Promise<string> {
+  async generateEmployeeCode(tenantId: string, role: string): Promise<string> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { code: true },
+    });
+    const orgPrefix = tenant?.code || 'JNC';
+
     const prefixMap: Record<string, string> = {
-      super_admin: 'JNC-SA',
-      admin: 'JNC-ADM',
-      sub_admin: 'JNC-SUB',
-      employee: 'JNC-EMP',
-      store_manager: 'JNC-STM',
-      project_manager: 'JNC-PM',
-      developer_lead: 'JNC-LEAD',
-      developer: 'JNC-DEV',
+      platform_super_admin: `${orgPrefix}-PSA`,
+      super_admin: `${orgPrefix}-SA`,
+      tenant_admin: `${orgPrefix}-ADM`,
+      admin: `${orgPrefix}-ADM`,
+      sub_admin: `${orgPrefix}-SUB`,
+      employee: `${orgPrefix}-EMP`,
+      store_manager: `${orgPrefix}-STM`,
+      project_manager: `${orgPrefix}-PM`,
+      developer_lead: `${orgPrefix}-LEAD`,
+      developer: `${orgPrefix}-DEV`,
     };
 
-    const prefix = prefixMap[role] || 'JNC-EMP';
+    const prefix = prefixMap[role] || `${orgPrefix}-EMP`;
     const count = await this.prisma.user.count({
       where: {
+        tenantId,
         employeeCode: { startsWith: prefix },
       },
     });
@@ -68,12 +73,9 @@ export class UsersService {
     return `${prefix}-${sequence}`;
   }
 
-  /**
-   * Generates secure, random 10-character temporary password
-   */
   generateTempPassword(): string {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
-    let pass = 'Jnc#';
+    let pass = 'Org#';
     for (let i = 0; i < 6; i++) {
       const idx = crypto.randomInt(0, chars.length);
       pass += chars[idx];
@@ -81,89 +83,88 @@ export class UsersService {
     return pass;
   }
 
-  /**
-   * Creates a new user with server-side role gating & temporary credentials
-   */
   async createUser(dto: CreateUserDto, creator: ScopedUser) {
-    // 1. Role Authorization Checks
-    if (creator.role !== 'super_admin' && creator.role !== 'admin') {
-      throw new ForbiddenException('Only Administrators can create users.');
+    const tenantId = creator.tenantId || 'default-tenant-id';
+
+    if (creator.role !== 'platform_super_admin' && creator.role !== 'super_admin' && creator.role !== 'tenant_admin' && creator.role !== 'admin') {
+      throw new ForbiddenException('Only Administrators can create company users.');
     }
 
-    if (creator.role === 'admin' && (dto.role === 'admin' || (dto.role as any) === 'super_admin')) {
-      throw new ForbiddenException(
-        'Administrators are only permitted to create Sub-Admin and Employee accounts.',
-      );
+    // License user limit check
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { maxUsers: true, name: true, code: true },
+    });
+    const currentUsersCount = await this.prisma.user.count({
+      where: { tenantId, deletedAt: null },
+    });
+
+    if (tenant && currentUsersCount >= tenant.maxUsers) {
+      throw new BadRequestException(`Company user license limit reached (${tenant.maxUsers} users). Upgrade plan to add more members.`);
     }
 
-    if ((dto.role as any) === 'super_admin') {
-      throw new ForbiddenException('Super Admin accounts cannot be created via standard user management.');
-    }
-
-    // 2. Validate email uniqueness
-    const existing = await this.prisma.user.findUnique({
-      where: { email: dto.email.trim().toLowerCase() },
+    const emailClean = dto.email.trim().toLowerCase();
+    const existing = await this.prisma.user.findFirst({
+      where: { tenantId, email: emailClean },
     });
     if (existing) {
-      throw new BadRequestException(`A user with email "${dto.email}" already exists.`);
+      throw new BadRequestException(`A user with email "${dto.email}" already exists in this company.`);
     }
 
-    // 3. Generate credentials
-    const employeeCode = await this.generateEmployeeCode(dto.role);
+    const employeeCode = await this.generateEmployeeCode(tenantId, dto.role);
     const tempPassword = this.generateTempPassword();
     const passwordHash = await bcrypt.hash(tempPassword, 10);
 
-    // 4. Create user record
     const newUser = await this.prisma.user.create({
       data: {
+        tenantId,
         employeeCode,
         name: dto.name.trim(),
-        email: dto.email.trim().toLowerCase(),
+        email: emailClean,
         phone: dto.phone?.trim() || null,
         passwordHash,
         role: dto.role,
         teamId: dto.teamId || null,
         warehouseId: dto.warehouseId || null,
         isActive: true,
-        mustResetPassword: true, // Forces reset on first login
+        mustResetPassword: true,
         createdById: creator.id,
       },
       select: {
         id: true,
+        tenantId: true,
         employeeCode: true,
         name: true,
         email: true,
         phone: true,
         role: true,
-        teamId: true, teamRef: { select: { id: true, name: true, allowedPages: true } },
+        teamId: true,
+        teamRef: { select: { id: true, name: true, allowedPages: true } },
         warehouseId: true,
         isActive: true,
         mustResetPassword: true,
         lastLoginAt: true,
         createdAt: true,
-        createdBy: { select: { id: true, name: true, employeeCode: true } },
       },
     });
 
-    // 5. Send Welcome & Credentials Email (Non-blocking if SMTP is unconfigured)
     try {
-      const branding = await this.notificationsService.getBranding();
+      const branding = await this.notificationsService.getBranding(tenantId);
       await this.notificationsService.sendEmail({
+        tenantId,
         to: newUser.email,
         subject: `Welcome to ${branding.companyDisplayName} - Your Login Credentials [${newUser.employeeCode}]`,
         html: `
           <h3>Welcome to ${branding.companyDisplayName}</h3>
           <p>Dear ${newUser.name},</p>
-          <p>Your account has been created on the ${branding.companyDisplayName} portal.</p>
+          <p>Your company workspace account has been created.</p>
           <p><strong>Login Details:</strong></p>
           <ul>
-            <li><strong>Portal URL:</strong> <a href="${process.env.FRONTEND_URL || 'https://admin.jsnc.co.in'}/login">${process.env.FRONTEND_URL || 'https://admin.jsnc.co.in'}/login</a></li>
-            <li><strong>Employee Code / Username:</strong> <code>${newUser.employeeCode}</code></li>
+            <li><strong>Company Code:</strong> <code>${tenant?.code || 'JNC'}</code></li>
+            <li><strong>Username / Employee Code:</strong> <code>${newUser.employeeCode}</code></li>
             <li><strong>Temporary Password:</strong> <code>${tempPassword}</code></li>
           </ul>
-          <p><em>Note: You will be prompted to change your password immediately upon first login.</em></p>
-          ${branding.companyPhone ? `<p>Support Hotline: <strong>${branding.companyPhone}</strong></p>` : ''}
-          <p>Best regards,<br>${branding.companyDisplayName} Administration</p>
+          <p><em>Note: You will be prompted to set your password upon first login.</em></p>
         `,
         relatedEntityType: 'user',
         relatedEntityId: newUser.id,
@@ -172,8 +173,8 @@ export class UsersService {
       this.logger.warn(`Could not dispatch welcome email for ${newUser.employeeCode}: ${emailErr.message}`);
     }
 
-    // 6. Record Audit Log
     await this.auditService.log({
+      tenantId,
       actorId: creator.id,
       actorName: creator.employeeCode,
       action: 'CREATE',
@@ -182,41 +183,30 @@ export class UsersService {
       afterState: { employeeCode: newUser.employeeCode, email: newUser.email, role: newUser.role },
     });
 
-    // Return created user with tempPassword for single on-screen fallback modal
     return {
       user: newUser,
       tempPassword,
-      message: `User ${newUser.name} [${newUser.employeeCode}] created successfully. Credentials emailed to ${newUser.email}.`,
+      message: `User ${newUser.name} [${newUser.employeeCode}] created successfully.`,
     };
   }
 
-  /**
-   * Find users with row-level RBAC filter
-   */
   async findAll(creator: ScopedUser, query?: { search?: string; role?: string; isActive?: string }) {
-    if (creator.role !== 'super_admin' && creator.role !== 'admin') {
+    const tenantId = creator.tenantId || 'default-tenant-id';
+
+    if (creator.role !== 'platform_super_admin' && creator.role !== 'super_admin' && creator.role !== 'tenant_admin' && creator.role !== 'admin') {
       throw new ForbiddenException('Access denied: User management is restricted to Administrators.');
     }
 
-    const where: any = { deletedAt: null };
-
-    // Row-level scoping for admin: sees users they created OR team/sub_admin/employees
-    if (creator.role === 'admin') {
-      where.OR = [
-        { createdById: creator.id },
-        { role: { in: ['sub_admin', 'employee'] } },
-      ];
-    }
+    const where: any = { tenantId, deletedAt: null };
 
     if (query?.search) {
       where.AND = [
         {
           OR: [
-            { name: { contains: query.search } },
-            { email: { contains: query.search } },
-            { employeeCode: { contains: query.search } },
-            { phone: { contains: query.search } },
-            { teamRef: { name: { contains: query.search } } },
+            { name: { contains: query.search, mode: 'insensitive' } },
+            { email: { contains: query.search, mode: 'insensitive' } },
+            { employeeCode: { contains: query.search, mode: 'insensitive' } },
+            { phone: { contains: query.search, mode: 'insensitive' } },
           ],
         },
       ];
@@ -230,84 +220,65 @@ export class UsersService {
       where.isActive = query.isActive === 'true';
     }
 
-    const users = await this.prisma.user.findMany({
+    const items = await this.prisma.user.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: 'asc' },
       select: {
         id: true,
+        tenantId: true,
         employeeCode: true,
         name: true,
         email: true,
         phone: true,
         role: true,
-        teamId: true, teamRef: { select: { id: true, name: true, allowedPages: true } },
+        teamId: true,
+        teamRef: { select: { id: true, name: true, allowedPages: true } },
         warehouseId: true,
         isActive: true,
         mustResetPassword: true,
         lastLoginAt: true,
         createdAt: true,
-        createdBy: { select: { id: true, name: true, employeeCode: true } },
       },
     });
 
-    return {
-      items: users,
-      total: users.length,
-      creatorRole: creator.role,
-    };
+    return { items, total: items.length };
   }
 
-  /**
-   * Get single user
-   */
   async findOne(id: string, creator: ScopedUser) {
-    if (creator.role !== 'super_admin' && creator.role !== 'admin') {
-      throw new ForbiddenException('Access denied.');
-    }
-
-    const user = await this.prisma.user.findUnique({
-      where: { id },
+    const tenantId = creator.tenantId || 'default-tenant-id';
+    const user = await this.prisma.user.findFirst({
+      where: { id, tenantId, deletedAt: null },
       select: {
         id: true,
+        tenantId: true,
         employeeCode: true,
         name: true,
         email: true,
         phone: true,
         role: true,
-        teamId: true, teamRef: { select: { id: true, name: true, allowedPages: true } },
+        teamId: true,
+        teamRef: { select: { id: true, name: true, allowedPages: true } },
         warehouseId: true,
         isActive: true,
         mustResetPassword: true,
         lastLoginAt: true,
         createdAt: true,
-        createdBy: { select: { id: true, name: true, employeeCode: true } },
       },
     });
 
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException('User not found in your company');
     return user;
   }
 
-  /**
-   * Update user details & role
-   */
-  async updateUser(id: string, dto: UpdateUserDto, creator: ScopedUser) {
-    if (creator.role !== 'super_admin' && creator.role !== 'admin') {
-      throw new ForbiddenException('Access denied.');
+  async updateUser(id: string, dto: UpdateUserDto, modifier: ScopedUser) {
+    const tenantId = modifier.tenantId || 'default-tenant-id';
+
+    if (modifier.role !== 'platform_super_admin' && modifier.role !== 'super_admin' && modifier.role !== 'tenant_admin' && modifier.role !== 'admin') {
+      throw new ForbiddenException('Only Administrators can edit users.');
     }
 
-    const targetUser = await this.prisma.user.findUnique({ where: { id } });
-    if (!targetUser) throw new NotFoundException('User not found');
-
-    // Admin cannot edit a super_admin or another admin
-    if (creator.role === 'admin') {
-      if (targetUser.role === 'super_admin' || (targetUser.role === 'admin' && targetUser.id !== creator.id)) {
-        throw new ForbiddenException('Administrators cannot modify higher or equal administrative accounts.');
-      }
-      if (dto.role === 'admin' || (dto.role as any) === 'super_admin') {
-        throw new ForbiddenException('Administrators cannot escalate roles to Admin or Super Admin.');
-      }
-    }
+    const user = await this.prisma.user.findFirst({ where: { id, tenantId, deletedAt: null } });
+    if (!user) throw new NotFoundException('User not found in your company');
 
     const updated = await this.prisma.user.update({
       where: { id },
@@ -315,18 +286,20 @@ export class UsersService {
         name: dto.name?.trim(),
         phone: dto.phone?.trim(),
         role: dto.role,
-        teamId: dto.teamId,
-        warehouseId: dto.warehouseId,
-        isActive: dto.isActive,
+        teamId: dto.teamId !== undefined ? dto.teamId : undefined,
+        warehouseId: dto.warehouseId !== undefined ? dto.warehouseId : undefined,
+        isActive: dto.isActive !== undefined ? dto.isActive : undefined,
       },
       select: {
         id: true,
+        tenantId: true,
         employeeCode: true,
         name: true,
         email: true,
         phone: true,
         role: true,
-        teamId: true, teamRef: { select: { id: true, name: true, allowedPages: true } },
+        teamId: true,
+        teamRef: { select: { id: true, name: true, allowedPages: true } },
         warehouseId: true,
         isActive: true,
         mustResetPassword: true,
@@ -335,32 +308,13 @@ export class UsersService {
       },
     });
 
-    await this.auditService.log({
-      actorId: creator.id,
-      actorName: creator.employeeCode,
-      action: 'UPDATE',
-      entityName: 'User',
-      entityId: updated.id,
-      afterState: dto,
-    });
-
     return updated;
   }
 
-  /**
-   * Reset user credentials (generates temp password and emails it)
-   */
-  async resetCredentials(id: string, creator: ScopedUser) {
-    if (creator.role !== 'super_admin' && creator.role !== 'admin') {
-      throw new ForbiddenException('Access denied.');
-    }
-
-    const targetUser = await this.prisma.user.findUnique({ where: { id } });
-    if (!targetUser) throw new NotFoundException('User not found');
-
-    if (creator.role === 'admin' && targetUser.role === 'super_admin') {
-      throw new ForbiddenException('Cannot reset credentials for Super Admin.');
-    }
+  async resetCredentials(id: string, modifier: ScopedUser) {
+    const tenantId = modifier.tenantId || 'default-tenant-id';
+    const user = await this.prisma.user.findFirst({ where: { id, tenantId, deletedAt: null } });
+    if (!user) throw new NotFoundException('User not found in your company');
 
     const tempPassword = this.generateTempPassword();
     const passwordHash = await bcrypt.hash(tempPassword, 10);
@@ -370,200 +324,48 @@ export class UsersService {
       data: {
         passwordHash,
         mustResetPassword: true,
+        failedLoginAttempts: 0,
+        lockoutUntil: null,
       },
     });
 
-    // Send email with new temp credentials (non-blocking)
-    try {
-      const branding = await this.notificationsService.getBranding();
-      await this.notificationsService.sendEmail({
-        to: targetUser.email,
-        subject: `Your ${branding.companyDisplayName} Password Has Been Reset [${targetUser.employeeCode}]`,
-        html: `
-          <h3>${branding.companyDisplayName} Password Reset Notification</h3>
-          <p>Dear ${targetUser.name},</p>
-          <p>Your password has been reset by an administrator.</p>
-          <p><strong>Your New Temporary Credentials:</strong></p>
-          <ul>
-            <li><strong>Username / Code:</strong> <code>${targetUser.employeeCode}</code></li>
-            <li><strong>New Temporary Password:</strong> <code>${tempPassword}</code></li>
-            <li><strong>Portal URL:</strong> <a href="${process.env.FRONTEND_URL || 'https://admin.jsnc.co.in'}/login">${process.env.FRONTEND_URL || 'https://admin.jsnc.co.in'}/login</a></li>
-          </ul>
-          <p><em>You will be required to choose a new password upon logging in.</em></p>
-          ${branding.companyPhone ? `<p>Support Hotline: <strong>${branding.companyPhone}</strong></p>` : ''}
-          <p>Best regards,<br>${branding.companyDisplayName} Administration</p>
-        `,
-        relatedEntityType: 'user',
-        relatedEntityId: targetUser.id,
-      });
-    } catch (emailErr: any) {
-      this.logger.warn(`Could not dispatch password reset email for ${targetUser.employeeCode}: ${emailErr.message}`);
-    }
-
-    await this.auditService.log({
-      actorId: creator.id,
-      actorName: creator.employeeCode,
-      action: 'STATUS_CHANGE',
-      entityName: 'User',
-      entityId: targetUser.id,
-      afterState: { action: 'CREDENTIALS_RESET', target: targetUser.employeeCode },
-    });
-
     return {
+      message: `Password reset successfully for ${user.name}`,
       tempPassword,
-      message: `Password reset successfully for ${targetUser.name} [${targetUser.employeeCode}]. New credentials emailed to ${targetUser.email}.`,
     };
   }
 
-  /**
-   * Toggle Active / Inactive status with explicit boolean intent
-   */
-  async toggleActive(id: string, isActive: boolean, creator: ScopedUser) {
-    if (creator.role !== 'super_admin' && creator.role !== 'admin') {
-      throw new ForbiddenException('Access denied: Only Administrators can modify user status.');
-    }
+  async toggleActive(id: string, modifier: ScopedUser) {
+    const tenantId = modifier.tenantId || 'default-tenant-id';
+    const user = await this.prisma.user.findFirst({ where: { id, tenantId, deletedAt: null } });
+    if (!user) throw new NotFoundException('User not found in your company');
 
-    if (typeof isActive !== 'boolean') {
-      throw new BadRequestException("Property 'isActive' must be an explicit boolean value (true or false).");
-    }
-
-    if (id === creator.id) {
-      throw new BadRequestException('Self-deactivation is blocked: You cannot deactivate your own account.');
-    }
-
-    const targetUser = await this.prisma.user.findUnique({ where: { id } });
-    if (!targetUser) {
-      throw new NotFoundException(`User with ID ${id} not found.`);
-    }
-
-    if (creator.role === 'admin' && (targetUser.role === 'super_admin' || targetUser.role === 'admin')) {
-      throw new ForbiddenException('Hierarchy violation: Administrators cannot modify status of higher or equal admin accounts.');
+    if (user.id === modifier.id) {
+      throw new BadRequestException('You cannot deactivate your own account.');
     }
 
     const updated = await this.prisma.user.update({
       where: { id },
-      data: { isActive },
-      select: {
-        id: true,
-        employeeCode: true,
-        name: true,
-        email: true,
-        role: true,
-        teamId: true, teamRef: { select: { id: true, name: true, allowedPages: true } },
-        warehouseId: true,
-        isActive: true,
-        mustResetPassword: true,
-        lastLoginAt: true,
-        createdAt: true,
-        createdBy: { select: { id: true, name: true, employeeCode: true } },
-      },
+      data: { isActive: !user.isActive },
     });
 
-    try {
-      await this.auditService.log({
-        actorId: creator.id,
-        actorName: creator.employeeCode,
-        action: 'STATUS_CHANGE',
-        entityName: 'User',
-        entityId: targetUser.id,
-        beforeState: { isActive: targetUser.isActive },
-        afterState: { isActive },
-      });
-    } catch (e) {
-      this.logger.error('Audit log failed during user status change:', e);
-    }
-
-    return updated;
+    return { id: updated.id, isActive: updated.isActive };
   }
 
-  /**
-   * Soft-delete user account (Protected: Cannot delete Super Admin or Self)
-   */
-  async delete(id: string, creator: ScopedUser) {
-    if (creator.role !== 'super_admin' && creator.role !== 'admin') {
-      throw new ForbiddenException('Access denied: Only Administrators can delete user accounts.');
-    }
+  async deleteUser(id: string, modifier: ScopedUser) {
+    const tenantId = modifier.tenantId || 'default-tenant-id';
+    const user = await this.prisma.user.findFirst({ where: { id, tenantId, deletedAt: null } });
+    if (!user) throw new NotFoundException('User not found in your company');
 
-    if (id === creator.id) {
-      throw new BadRequestException('Self-deletion is blocked: You cannot delete your own account.');
-    }
-
-    const targetUser = await this.prisma.user.findUnique({ where: { id } });
-    if (!targetUser) {
-      throw new NotFoundException(`User with ID ${id} not found.`);
-    }
-
-    if (targetUser.role === 'super_admin') {
-      throw new ForbiddenException('Security restriction: Super Admin accounts cannot be deleted.');
-    }
-
-    if (creator.role === 'admin' && targetUser.role === 'admin') {
-      throw new ForbiddenException('Hierarchy violation: Administrators cannot delete other administrator accounts.');
+    if (user.id === modifier.id) {
+      throw new BadRequestException('You cannot delete your own account.');
     }
 
     await this.prisma.user.update({
       where: { id },
-      data: {
-        deletedAt: new Date(),
-        isActive: false,
-      },
+      data: { deletedAt: new Date(), isActive: false },
     });
 
-    try {
-      await this.auditService.log({
-        actorId: creator.id,
-        actorName: creator.employeeCode,
-        action: 'DELETE',
-        entityName: 'User',
-        entityId: targetUser.id,
-        beforeState: { employeeCode: targetUser.employeeCode, email: targetUser.email, role: targetUser.role },
-      });
-    } catch (e) {
-      this.logger.error('Audit log failed during user deletion:', e);
-    }
-
-    return { success: true, message: `User ${targetUser.name} [${targetUser.employeeCode}] deleted successfully.` };
-  }
-
-  /**
-   * Force password reset for all active users across the organization (Super Admin only)
-   */
-  async forceResetAllPasswords(actor: ScopedUser) {
-    if (actor.role !== 'super_admin') {
-      throw new ForbiddenException('Access denied: Only Super Admin can force system-wide password resets.');
-    }
-
-    const result = await this.prisma.user.updateMany({
-      where: {
-        isActive: true,
-        deletedAt: null,
-      },
-      data: {
-        mustResetPassword: true,
-      },
-    });
-
-    try {
-      await this.auditService.log({
-        actorId: actor.id,
-        actorName: actor.employeeCode,
-        action: 'STATUS_CHANGE',
-        entityName: 'User',
-        entityId: 'ALL',
-        afterState: { action: 'FORCE_SYSTEM_PASSWORD_RESET', affectedUsers: result.count },
-      });
-    } catch (e) {
-      this.logger.error('Audit log failed during bulk password reset:', e);
-    }
-
-    this.logger.warn(`Super Admin ${actor.employeeCode} triggered forced password reset for ${result.count} users.`);
-
-    return {
-      success: true,
-      affectedUsers: result.count,
-      message: `Forced password reset successfully applied to ${result.count} active users. All users must establish a new password upon next login.`,
-    };
+    return { message: `User ${user.name} removed successfully.` };
   }
 }
-
-

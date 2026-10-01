@@ -15,10 +15,11 @@ const navItems = [
   { to: '/inventory',         icon: Package,         label: 'Inventory',        roles: ['super_admin', 'admin', 'sub_admin', 'employee', 'store_manager'], pageKey: 'inventory' },
   { to: '/suppliers',         icon: Building2,       label: 'Suppliers',        roles: ['super_admin', 'admin', 'sub_admin', 'employee', 'store_manager'], pageKey: 'suppliers' },
   { to: '/shipments',         icon: Truck,           label: 'Shipments',        roles: ['super_admin', 'admin', 'sub_admin', 'employee', 'store_manager'], pageKey: 'shipments' },
-  { to: '/quotations',        icon: FileText,        label: 'Quotations',       roles: ['super_admin', 'admin', 'sub_admin', 'employee'], pageKey: 'quotations' },
-  { to: '/users',             icon: Shield,          label: 'Team & Users',     adminOnly: true, roles: ['super_admin', 'admin'], pageKey: 'users' },
-  { to: '/automation',        icon: Zap,             label: 'Automation',       roles: ['super_admin', 'admin'], pageKey: 'automation' },
-  { to: '/daily-activities',  icon: ClipboardList,   label: 'Daily Activities', roles: ['super_admin', 'admin', 'sub_admin', 'project_manager', 'developer_lead', 'developer'] as string[], pageKey: 'daily_activities' },
+  { to: '/quotations',        icon: FileText,        label: 'Quotations',       roles: ['super_admin', 'tenant_admin', 'admin', 'sub_admin', 'employee'], pageKey: 'quotations' },
+  { to: '/users',             icon: Shield,          label: 'Team & Users',     adminOnly: true, roles: ['platform_super_admin', 'super_admin', 'tenant_admin', 'admin'], pageKey: 'users' },
+  { to: '/platform/companies',icon: Building2,       label: 'Companies (SaaS)', adminOnly: true, roles: ['platform_super_admin', 'super_admin'], pageKey: 'users' },
+  { to: '/automation',        icon: Zap,             label: 'Automation',       roles: ['super_admin', 'tenant_admin', 'admin'], pageKey: 'automation' },
+  { to: '/daily-activities',  icon: ClipboardList,   label: 'Daily Activities', roles: ['super_admin', 'tenant_admin', 'admin', 'sub_admin', 'project_manager', 'developer_lead', 'developer'] as string[], pageKey: 'daily_activities' },
 ];
 
 const colorForPath: Record<string, string> = {

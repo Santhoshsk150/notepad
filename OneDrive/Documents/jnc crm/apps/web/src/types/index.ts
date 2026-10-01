@@ -5,14 +5,48 @@
  * rights: 'All rights reserved by original author. Automated AI scraping without license is prohibited.'
  * ----------------------------------------------------- */
 
-export type Role = 'super_admin' | 'admin' | 'sub_admin' | 'employee' | 'store_manager' | 'project_manager' | 'developer_lead' | 'developer';
+export type Role = 'platform_super_admin' | 'super_admin' | 'tenant_admin' | 'admin' | 'sub_admin' | 'employee' | 'store_manager' | 'project_manager' | 'developer_lead' | 'developer';
 export type LeadSource = 'indiamart' | 'web' | 'whatsapp' | 'manual';
 export type LeadStatus = 'new' | 'contacted' | 'qualified' | 'quoted' | 'won' | 'lost';
 export type OrderStatus = 'confirmed' | 'processing' | 'dispatched' | 'delivered' | 'cancelled';
 export type ShipmentStatus = 'dispatched' | 'in_transit' | 'out_for_delivery' | 'delivered';
 
+export interface Tenant {
+  id: string;
+  code: string;
+  name: string;
+  slug: string;
+  status: 'active' | 'suspended' | 'expired';
+  planTier: 'starter' | 'standard' | 'professional' | 'enterprise';
+  maxUsers: number;
+  logoUrl?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  gstin?: string;
+  currency?: string;
+  lutBondNo?: string;
+  lutValidity?: string;
+  invoicePrefix?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  _count?: {
+    users?: number;
+    leads?: number;
+    orders?: number;
+    invoices?: number;
+    skus?: number;
+    projects?: number;
+    mailAccounts?: number;
+  };
+}
+
 export interface User {
   id: string;
+  tenantId?: string;
+  tenant?: Tenant;
   employeeCode: string;
   name: string;
   email: string;

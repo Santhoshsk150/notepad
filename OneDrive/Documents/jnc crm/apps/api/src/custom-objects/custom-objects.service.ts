@@ -288,8 +288,8 @@ export class CustomObjectsService {
     }
 
     // Check for existing CustomObject with same API Name
-    const existing = await this.prisma.customObject.findUnique({
-      where: { apiName },
+    const existing = await this.prisma.customObject.findFirst({
+      where: { apiName, tenantId: user.tenantId || 'default-tenant-id' },
     });
     if (existing) {
       throw new ConflictException(`A custom object with API Name "${apiName}" already exists.`);

@@ -265,7 +265,7 @@ export class OrdersService {
 
     if (!order || order.deletedAt) throw new NotFoundException('Order not found');
 
-    const scopeWhere = this.scopingService.getOrderScope(user);
+    const scopeWhere: any = this.scopingService.getOrderScope(user);
     if (scopeWhere.createdById && order.createdById !== user.id) {
       throw new NotFoundException('Order not found');
     }

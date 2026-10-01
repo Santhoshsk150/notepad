@@ -9,6 +9,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface CreateAuditLogDto {
+  tenantId?: string;
   actorId?: string;
   actorName?: string;
   action: string;
@@ -37,6 +38,7 @@ export class AuditService {
     try {
       return await this.prisma.auditLog.create({
         data: {
+          tenantId: dto.tenantId || 'default-tenant-id',
           actorId: dto.actorId,
           actorName: dto.actorName,
           action: dto.action,
@@ -47,29 +49,35 @@ export class AuditService {
           ipAddress: dto.ipAddress || '127.0.0.1',
         },
       });
-    } catch (err) {
-      console.error('Audit logging failed:', err);
+    } catch (e) {
+      console.warn('AuditLog creation warning:', e);
+      return null;
     }
   }
 
-  async getLogs(query: { page?: number; limit?: number; entityName?: string; actorId?: string; search?: string }) {
+  async getLogs(query: {
+    tenantId?: string;
+    entityName?: string;
+    entityId?: string;
+    actorId?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
     const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 25;
+    const limit = Number(query.limit) || 50;
     const skip = (page - 1) * limit;
 
     const where: any = {};
-    if (query.entityName) {
-      where.entityName = query.entityName;
-    }
-    if (query.actorId) {
-      where.actorId = query.actorId;
-    }
+    if (query.tenantId) where.tenantId = query.tenantId;
+    if (query.entityName) where.entityName = query.entityName;
+    if (query.entityId) where.entityId = query.entityId;
+    if (query.actorId) where.actorId = query.actorId;
     if (query.search) {
       where.OR = [
+        { actorName: { contains: query.search } },
         { action: { contains: query.search } },
         { entityName: { contains: query.search } },
-        { actorName: { contains: query.search } },
-        { entityId: { contains: query.search } },
       ];
     }
 
@@ -79,6 +87,11 @@ export class AuditService {
         skip,
         take: limit,
         orderBy: { timestamp: 'desc' },
+        include: {
+          actor: {
+            select: { id: true, name: true, employeeCode: true, email: true },
+          },
+        },
       }),
       this.prisma.auditLog.count({ where }),
     ]);
