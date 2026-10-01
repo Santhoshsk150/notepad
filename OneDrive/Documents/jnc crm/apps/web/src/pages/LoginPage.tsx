@@ -81,25 +81,11 @@ export default function LoginPage() {
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="label flex items-center justify-between">
-                    <span>Company / Org Code</span>
-                    <span className="text-[11px] text-slate-400 font-normal">(Optional for Root)</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="input uppercase placeholder:normal-case font-mono tracking-wider"
-                    placeholder="e.g. JNC, VERTEX, ACME"
-                    value={companyCode}
-                    onChange={(e) => setCompanyCode(e.target.value)}
-                  />
-                </div>
-
-                <div>
                   <label className="label">Username or Email</label>
                   <input
                     type="text"
                     className="input"
-                    placeholder="Enter username or email"
+                    placeholder="e.g. Jayarajjnc@gmail.com or JNC-SA-001"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     required
@@ -111,10 +97,25 @@ export default function LoginPage() {
                   <input
                     type="password"
                     className="input"
-                    placeholder="Enter password"
+                    placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
+                  />
+                </div>
+
+                {/* Optional Company Code Field (Auto-detected if left empty) */}
+                <div className="pt-1">
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="text-slate-500 dark:text-slate-400">Organization / Company Code</span>
+                    <span className="text-[11px] text-slate-400 font-medium">Auto-detected</span>
+                  </div>
+                  <input
+                    type="text"
+                    className="input uppercase font-mono tracking-wider text-xs bg-slate-50/50 dark:bg-black/20"
+                    placeholder="e.g. JNC, ACME, VERTEX (Optional)"
+                    value={companyCode}
+                    onChange={(e) => setCompanyCode(e.target.value)}
                   />
                 </div>
 
