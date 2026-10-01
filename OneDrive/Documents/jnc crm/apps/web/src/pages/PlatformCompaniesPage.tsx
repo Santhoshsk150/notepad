@@ -51,6 +51,19 @@ export default function PlatformCompaniesPage() {
   const [viewingTenant, setViewingTenant] = useState<any | null>(null);
   const [loadingTenantDetail, setLoadingTenantDetail] = useState(false);
 
+  // Edit Tenant & Reset Password Modal State
+  const [editingTenant, setEditingTenant] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    planTier: 'standard',
+    maxUsers: 10,
+    invoicePrefix: '',
+    phone: '',
+    email: '',
+    newAdminPassword: '',
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const fetchTenants = async () => {
     try {
       setLoading(true);
@@ -96,6 +109,44 @@ export default function PlatformCompaniesPage() {
       showAlert('Failed to Provision Company', err?.response?.data?.message || 'Error occurred while creating company', 'error');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleOpenEditTenant = (tenant: Tenant) => {
+    setEditingTenant(tenant);
+    setEditForm({
+      name: tenant.name || '',
+      planTier: tenant.planTier || 'standard',
+      maxUsers: tenant.maxUsers || 10,
+      invoicePrefix: tenant.invoicePrefix || '',
+      phone: tenant.phone || '',
+      email: tenant.email || '',
+      newAdminPassword: '',
+    });
+  };
+
+  const handleSaveEditTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTenant) return;
+
+    setSavingEdit(true);
+    try {
+      await platformApi.updateTenant(editingTenant.id, {
+        name: editForm.name.trim(),
+        planTier: editForm.planTier,
+        maxUsers: Number(editForm.maxUsers),
+        invoicePrefix: editForm.invoicePrefix.trim() || undefined,
+        phone: editForm.phone.trim() || undefined,
+        email: editForm.email.trim() || undefined,
+      });
+
+      showAlert('Updated Successfully', `${editForm.name} profile and settings updated.`, 'success');
+      setEditingTenant(null);
+      fetchTenants();
+    } catch (err: any) {
+      showAlert('Update Failed', err?.response?.data?.message || 'Could not update company settings', 'error');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -358,6 +409,13 @@ export default function PlatformCompaniesPage() {
                           title="View Company Members & Statistics"
                         >
                           <Users size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleOpenEditTenant(tenant)}
+                          className="btn p-1.5 rounded-lg text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20"
+                          title="Edit Company Details & Settings"
+                        >
+                          <Settings size={14} />
                         </button>
                         <button
                           onClick={() => handleToggleStatus(tenant)}
@@ -746,6 +804,132 @@ export default function PlatformCompaniesPage() {
                   Close
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Company Modal */}
+      <AnimatePresence>
+        {editingTenant && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-[#181B26] border border-slate-200 dark:border-[#2A3042] rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-[#2A3042] bg-slate-50 dark:bg-[#1E2230]">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-600">
+                    <Settings size={18} />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-slate-900 dark:text-white text-sm">
+                      Edit {editingTenant.name}
+                    </h2>
+                    <div className="text-[11px] text-slate-500">Org Code: {editingTenant.code}</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setEditingTenant(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-white/5"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEditTenant} className="p-4 overflow-y-auto space-y-4 flex-1">
+                <div>
+                  <label className="label">Company Display Name *</label>
+                  <input
+                    type="text"
+                    className="input text-xs"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Plan Tier</label>
+                    <select
+                      className="input text-xs"
+                      value={editForm.planTier}
+                      onChange={(e) => setEditForm({ ...editForm, planTier: e.target.value })}
+                    >
+                      <option value="starter">Starter</option>
+                      <option value="standard">Standard</option>
+                      <option value="professional">Professional</option>
+                      <option value="enterprise">Enterprise</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="label">Max User Seats</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={1000}
+                      className="input text-xs"
+                      value={editForm.maxUsers}
+                      onChange={(e) => setEditForm({ ...editForm, maxUsers: Number(e.target.value) })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Invoice Prefix</label>
+                    <input
+                      type="text"
+                      className="input uppercase text-xs font-mono"
+                      placeholder="e.g. VTX, INV"
+                      value={editForm.invoicePrefix}
+                      onChange={(e) => setEditForm({ ...editForm, invoicePrefix: e.target.value.toUpperCase() })}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="label">Company Phone</label>
+                    <input
+                      type="text"
+                      className="input text-xs"
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label">Official Billing Email</label>
+                  <input
+                    type="email"
+                    className="input text-xs"
+                    value={editForm.email}
+                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  />
+                </div>
+
+                <div className="pt-3 border-t border-slate-200 dark:border-[#2A3042] flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingTenant(null)}
+                    className="btn btn-secondary text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingEdit}
+                    className="btn btn-primary text-xs flex items-center gap-1.5"
+                  >
+                    {savingEdit ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+                    <span>{savingEdit ? 'Saving...' : 'Save Changes'}</span>
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

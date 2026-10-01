@@ -88,6 +88,66 @@ export class SettingsService {
     };
   }
 
+  /**
+   * Get full company invoicing & tax profile for tenant
+   */
+  async getCompanyProfile(user: ScopedUser) {
+    const tenantId = user.tenantId || 'default-tenant-id';
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Company tenant not found');
+    }
+
+    return tenant;
+  }
+
+  /**
+   * Update full company invoicing & tax profile for tenant
+   */
+  async updateCompanyProfile(user: ScopedUser, dto: any) {
+    const tenantId = user.tenantId || 'default-tenant-id';
+
+    if (user.role !== 'platform_super_admin' && user.role !== 'super_admin' && user.role !== 'tenant_admin' && user.role !== 'admin') {
+      throw new ForbiddenException('Only Administrators can update Company Invoicing & Tax Profile.');
+    }
+
+    const updated = await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        name: dto.name?.trim(),
+        phone: dto.phone?.trim(),
+        email: dto.email?.trim(),
+        address: dto.address?.trim(),
+        city: dto.city?.trim(),
+        state: dto.state?.trim(),
+        pincode: dto.pincode?.trim(),
+        website: dto.website?.trim(),
+        gstin: dto.gstin?.trim()?.toUpperCase(),
+        pan: dto.pan?.trim()?.toUpperCase(),
+        lutBondNo: dto.lutBondNo?.trim(),
+        lutValidity: dto.lutValidity?.trim(),
+        invoicePrefix: dto.invoicePrefix?.trim()?.toUpperCase(),
+        invoiceTerms: dto.invoiceTerms?.trim(),
+        bankName: dto.bankName?.trim(),
+        bankAccountNumber: dto.bankAccountNumber?.trim(),
+        bankIfsc: dto.bankIfsc?.trim()?.toUpperCase(),
+        bankBranch: dto.bankBranch?.trim(),
+        bankUpi: dto.bankUpi?.trim(),
+        signatoryName: dto.signatoryName?.trim(),
+        signatoryDesignation: dto.signatoryDesignation?.trim(),
+        signatureUrl: dto.signatureUrl,
+        stampUrl: dto.stampUrl,
+        logoUrl: dto.logoUrl,
+        isOnboarded: true,
+      },
+    });
+
+    return updated;
+  }
+
   // --- TENANT-SCOPED ISOLATED MAIL ACCOUNTS ---
 
   async getMailAccounts(user: ScopedUser) {

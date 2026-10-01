@@ -251,6 +251,8 @@ export const brandingApi = {
     companyPhone?: string;
     companyLogoUrl?: string | null;
   }) => api.post('/settings/branding', data),
+  getProfile: () => api.get('/settings/company-profile'),
+  updateProfile: (data: any) => api.post('/settings/company-profile', data),
 };
 
 export const mailAccountsApi = {

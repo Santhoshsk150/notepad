@@ -43,7 +43,7 @@ export class SettingsController {
    */
   @Post('branding')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('super_admin', 'admin')
+  @Roles('super_admin', 'admin', 'tenant_admin', 'platform_super_admin')
   @HttpCode(HttpStatus.OK)
   async updateBranding(
     @Body()
@@ -55,6 +55,31 @@ export class SettingsController {
     @CurrentUser() user: ScopedUser,
   ) {
     return this.settingsService.updateBranding(user, body);
+  }
+
+  /**
+   * GET /settings/company-profile
+   * Fetch company invoicing, address, tax & bank details
+   */
+  @Get('company-profile')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  async getCompanyProfile(@CurrentUser() user: ScopedUser) {
+    return this.settingsService.getCompanyProfile(user);
+  }
+
+  /**
+   * POST /settings/company-profile
+   * Save complete company invoicing, address, tax, bank & signatory details
+   */
+  @Post('company-profile')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('super_admin', 'admin', 'tenant_admin', 'platform_super_admin')
+  @HttpCode(HttpStatus.OK)
+  async updateCompanyProfile(
+    @Body() body: any,
+    @CurrentUser() user: ScopedUser,
+  ) {
+    return this.settingsService.updateCompanyProfile(user, body);
   }
 
   // --- SUPER ADMIN DYNAMIC MAIL ACCOUNTS ENDPOINTS ---

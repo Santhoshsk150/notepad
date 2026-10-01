@@ -23,21 +23,40 @@ model Tenant {
   maxUsers        Int            @default(10)
 
   // Isolated Company Branding & Configuration
-  logoUrl         String?
-  phone           String?
-  email           String?
-  address         String?
-  city            String?
-  state           String?        @default("Karnataka")
-  gstin           String?
-  currency        String         @default("INR")
-  lutBondNo       String?        @default("AD290525013648T")
-  lutValidity     String?        @default("From : 10/05/2025 To: 09/05/2026")
-  invoicePrefix   String?        @default("INV")
+  logoUrl             String?
+  phone               String?
+  email               String?
+  address             String?
+  city                String?
+  state               String?        @default("Karnataka")
+  pincode             String?
+  website             String?
+  gstin               String?
+  pan                 String?
+  currency            String         @default("INR")
+  lutBondNo           String?        @default("AD290525013648T")
+  lutValidity         String?        @default("From : 10/05/2025 To: 09/05/2026")
+  invoicePrefix       String?        @default("INV")
+  invoiceTerms        String?
 
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  deletedAt       DateTime?
+  // Banking Details for Invoices
+  bankName            String?
+  bankAccountNumber   String?
+  bankIfsc            String?
+  bankBranch          String?
+  bankUpi             String?
+
+  // Signatory & Stamp
+  signatoryName       String?
+  signatoryDesignation String?
+  signatureUrl        String?
+  stampUrl            String?
+
+  isOnboarded         Boolean        @default(false)
+
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  deletedAt           DateTime?
 
   // Relations
   users           User[]

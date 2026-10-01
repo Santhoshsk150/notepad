@@ -7,28 +7,97 @@ import {
 import { useBranding } from '../contexts/BrandingContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { brandingApi } from '../services/api';
 
 export default function BrandingSettingsPage() {
   const { branding, updateBranding, refreshBranding } = useBranding();
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const isAdmin = user?.role === 'super_admin' || user?.role === 'admin';
+  const isAdmin = user?.role === 'super_admin' || user?.role === 'admin' || user?.role === 'tenant_admin' || user?.role === 'platform_super_admin';
 
   const [companyName, setCompanyName] = useState(branding.companyDisplayName);
   const [companyPhone, setCompanyPhone] = useState(branding.companyPhone);
   const [logoPreview, setLogoPreview] = useState<string | null>(branding.companyLogoUrl);
 
+  // Invoicing & Tax Profile Fields
+  const [email, setEmail] = useState('');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('Karnataka');
+  const [pincode, setPincode] = useState('');
+  const [website, setWebsite] = useState('');
+  const [gstin, setGstin] = useState('');
+  const [pan, setPan] = useState('');
+  const [invoicePrefix, setInvoicePrefix] = useState('INV');
+  const [lutBondNo, setLutBondNo] = useState('');
+  const [lutValidity, setLutValidity] = useState('');
+
+  // Bank Details
+  const [bankName, setBankName] = useState('');
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankIfsc, setBankIfsc] = useState('');
+  const [bankBranch, setBankBranch] = useState('');
+  const [bankUpi, setBankUpi] = useState('');
+
+  // Signatory & Stamp
+  const [signatoryName, setSignatoryName] = useState('');
+  const [signatoryDesignation, setSignatoryDesignation] = useState('');
+  const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
+  const [stampPreview, setStampPreview] = useState<string | null>(null);
+
   const [saving, setSaving] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const sigInputRef = useRef<HTMLInputElement>(null);
+  const stampInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setCompanyName(branding.companyDisplayName);
     setCompanyPhone(branding.companyPhone);
     setLogoPreview(branding.companyLogoUrl);
+
+    // Fetch full company invoicing profile
+    const loadProfile = async () => {
+      try {
+        setLoadingProfile(true);
+        const { data } = await brandingApi.getProfile();
+        if (data) {
+          if (data.name) setCompanyName(data.name);
+          if (data.phone) setCompanyPhone(data.phone);
+          if (data.logoUrl) setLogoPreview(data.logoUrl);
+          if (data.email) setEmail(data.email);
+          if (data.address) setAddress(data.address);
+          if (data.city) setCity(data.city);
+          if (data.state) setState(data.state);
+          if (data.pincode) setPincode(data.pincode);
+          if (data.website) setWebsite(data.website);
+          if (data.gstin) setGstin(data.gstin);
+          if (data.pan) setPan(data.pan);
+          if (data.invoicePrefix) setInvoicePrefix(data.invoicePrefix);
+          if (data.lutBondNo) setLutBondNo(data.lutBondNo);
+          if (data.lutValidity) setLutValidity(data.lutValidity);
+          if (data.bankName) setBankName(data.bankName);
+          if (data.bankAccountNumber) setBankAccountNumber(data.bankAccountNumber);
+          if (data.bankIfsc) setBankIfsc(data.bankIfsc);
+          if (data.bankBranch) setBankBranch(data.bankBranch);
+          if (data.bankUpi) setBankUpi(data.bankUpi);
+          if (data.signatoryName) setSignatoryName(data.signatoryName);
+          if (data.signatoryDesignation) setSignatoryDesignation(data.signatoryDesignation);
+          if (data.signatureUrl) setSignaturePreview(data.signatureUrl);
+          if (data.stampUrl) setStampPreview(data.stampUrl);
+        }
+      } catch (err) {
+        // Fallback to defaults
+      } finally {
+        setLoadingProfile(false);
+      }
+    };
+
+    loadProfile();
   }, [branding]);
 
   const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -304,6 +373,233 @@ export default function BrandingSettingsPage() {
           </div>
         </div>
 
+        {/* ─── INVOICING & REGISTERED TAX PROFILE CARD ─────────────────────── */}
+        <div className="card space-y-5">
+          <div className="border-b border-slate-200 dark:border-[#2A3042] pb-3">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Building2 size={16} className="text-indigo-600" />
+              Registered Business & Tax Invoicing Profile
+            </h2>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+              These details automatically populate on all Tax Invoices, Quotations, Proforma, and Delivery Challans.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Registered Business Address</label>
+              <input
+                type="text"
+                className="input text-xs"
+                placeholder="e.g. No 18/19, 2nd Floor, Coconut Avenue"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="label">City</label>
+                <input
+                  type="text"
+                  className="input text-xs"
+                  placeholder="e.g. Bengaluru"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label">State</label>
+                <input
+                  type="text"
+                  className="input text-xs"
+                  placeholder="e.g. Karnataka"
+                  value={state}
+                  onChange={(e) => setState(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label">PIN Code</label>
+                <input
+                  type="text"
+                  className="input text-xs font-mono"
+                  placeholder="e.g. 560076"
+                  value={pincode}
+                  onChange={(e) => setPincode(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="label">GSTIN / Tax ID</label>
+              <input
+                type="text"
+                className="input text-xs uppercase font-mono"
+                placeholder="29AZWPJ2622A1ZD"
+                value={gstin}
+                onChange={(e) => setGstin(e.target.value.toUpperCase())}
+              />
+            </div>
+
+            <div>
+              <label className="label">PAN Number</label>
+              <input
+                type="text"
+                className="input text-xs uppercase font-mono"
+                placeholder="AZWPJ2622A"
+                value={pan}
+                onChange={(e) => setPan(e.target.value.toUpperCase())}
+              />
+            </div>
+
+            <div>
+              <label className="label">Invoice Prefix</label>
+              <input
+                type="text"
+                className="input text-xs uppercase font-mono"
+                placeholder="e.g. JNC, VTX, INV"
+                value={invoicePrefix}
+                onChange={(e) => setInvoicePrefix(e.target.value.toUpperCase())}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Official Billing Email</label>
+              <input
+                type="email"
+                className="input text-xs"
+                placeholder="billing@yourcompany.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="label">Website</label>
+              <input
+                type="text"
+                className="input text-xs"
+                placeholder="https://yourcompany.com"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ─── BANK DETAILS FOR INVOICES CARD ─────────────────────────────── */}
+        <div className="card space-y-5">
+          <div className="border-b border-slate-200 dark:border-[#2A3042] pb-3">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Building2 size={16} className="text-emerald-600" />
+              Bank Account Details (Printed on Invoices & Quotes)
+            </h2>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+              Customers will see these bank credentials for NEFT/RTGS wire transfers and UPI payments.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="label">Bank Name</label>
+              <input
+                type="text"
+                className="input text-xs"
+                placeholder="e.g. Karnataka Bank / HDFC"
+                value={bankName}
+                onChange={(e) => setBankName(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="label">Account Number</label>
+              <input
+                type="text"
+                className="input text-xs font-mono"
+                placeholder="e.g. 9222000100091501"
+                value={bankAccountNumber}
+                onChange={(e) => setBankAccountNumber(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="label">IFSC Code</label>
+              <input
+                type="text"
+                className="input text-xs uppercase font-mono"
+                placeholder="e.g. KARB0000922"
+                value={bankIfsc}
+                onChange={(e) => setBankIfsc(e.target.value.toUpperCase())}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Branch Name</label>
+              <input
+                type="text"
+                className="input text-xs"
+                placeholder="e.g. JP Nagar 7th Phase, Bengaluru"
+                value={bankBranch}
+                onChange={(e) => setBankBranch(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="label">UPI ID (Optional)</label>
+              <input
+                type="text"
+                className="input text-xs font-mono"
+                placeholder="e.g. yourcompany@okaxis"
+                value={bankUpi}
+                onChange={(e) => setBankUpi(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ─── AUTHORIZED SIGNATORY CARD ──────────────────────────────────── */}
+        <div className="card space-y-5">
+          <div className="border-b border-slate-200 dark:border-[#2A3042] pb-3">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <ShieldCheck size={16} className="text-purple-600" />
+              Authorized Signatory & Seal
+            </h2>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+              Appears on the legal signature section at the bottom of generated PDF invoices.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Signatory Full Name</label>
+              <input
+                type="text"
+                className="input text-xs"
+                placeholder="e.g. Mr. Jayaraj H S / John Doe"
+                value={signatoryName}
+                onChange={(e) => setSignatoryName(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="label">Designation / Title</label>
+              <input
+                type="text"
+                className="input text-xs"
+                placeholder="e.g. Proprietor / Managing Director"
+                value={signatoryDesignation}
+                onChange={(e) => setSignatoryDesignation(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
         {/* ─── ACTION BUTTONS ─────────────────────────────────────────────── */}
         <div className="flex items-center justify-end gap-3 pt-2">
           <button
@@ -321,12 +617,12 @@ export default function BrandingSettingsPage() {
             {saving ? (
               <>
                 <RefreshCw size={14} className="animate-spin" />
-                <span>Saving Changes...</span>
+                <span>Saving Invoicing & Branding Profile...</span>
               </>
             ) : (
               <>
                 <ShieldCheck size={16} />
-                <span>Save Branding Settings</span>
+                <span>Save Company Profile & Settings</span>
               </>
             )}
           </button>
