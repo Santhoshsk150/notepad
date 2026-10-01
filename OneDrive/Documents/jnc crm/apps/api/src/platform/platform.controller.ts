@@ -53,4 +53,9 @@ export class PlatformController {
   async deleteTenant(@Param('id') id: string) {
     return this.platformService.deleteTenant(id);
   }
+
+  @Post(':id/impersonate')
+  async impersonateTenant(@Param('id') id: string) {
+    return this.platformService.impersonateTenant(id);
+  }
 }

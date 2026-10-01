@@ -76,6 +76,7 @@ export const platformApi = {
   createTenant: (data: any) => api.post('/platform/tenants', data),
   updateTenant: (id: string, data: any) => api.put(`/platform/tenants/${id}`, data),
   deleteTenant: (id: string) => api.delete(`/platform/tenants/${id}`),
+  impersonateTenant: (id: string) => api.post(`/platform/tenants/${id}/impersonate`),
 };
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────

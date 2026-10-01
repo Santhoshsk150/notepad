@@ -12,6 +12,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 
 export interface CreateTenantDto {
@@ -49,7 +50,10 @@ export interface UpdateTenantDto {
 
 @Injectable()
 export class PlatformService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private jwtService: JwtService,
+  ) {}
 
   /**
    * List all tenant organizations (Platform Super Admin only)
@@ -241,5 +245,76 @@ export class PlatformService {
     });
 
     return { message: 'Company workspace deactivated successfully' };
+  }
+
+  /**
+   * Salesforce-style Support Impersonation ("Login-As-Org Admin")
+   * Allows Platform Super Admin to switch context into a subscriber org.
+   */
+  async impersonateTenant(id: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id },
+      include: {
+        users: {
+          where: { isActive: true },
+          orderBy: { createdAt: 'asc' },
+          take: 5,
+        },
+      },
+    });
+
+    if (!tenant) throw new NotFoundException('Company workspace not found');
+
+    // Prefer tenant_admin or super_admin or first active user
+    const targetUser =
+      tenant.users.find((u) => u.role === 'tenant_admin' || u.role === 'super_admin' || u.role === 'admin') ||
+      tenant.users[0];
+
+    if (!targetUser) {
+      throw new BadRequestException('No active user accounts found in this company workspace.');
+    }
+
+    const payload = {
+      sub: targetUser.id,
+      email: targetUser.email,
+      employeeCode: targetUser.employeeCode,
+      role: targetUser.role,
+      tenantId: tenant.id,
+      isImpersonating: true,
+      impersonatedTenantName: tenant.name,
+      impersonatedTenantCode: tenant.code,
+    };
+
+    const accessToken = this.jwtService.sign(payload);
+
+    return {
+      accessToken,
+      user: {
+        id: targetUser.id,
+        tenantId: tenant.id,
+        employeeCode: targetUser.employeeCode,
+        name: targetUser.name,
+        email: targetUser.email,
+        role: targetUser.role,
+        isImpersonating: true,
+        impersonatedTenantName: tenant.name,
+        impersonatedTenantCode: tenant.code,
+        tenant: {
+          id: tenant.id,
+          code: tenant.code,
+          name: tenant.name,
+          slug: tenant.slug,
+          status: tenant.status,
+          planTier: tenant.planTier,
+          maxUsers: tenant.maxUsers,
+          logoUrl: tenant.logoUrl,
+          phone: tenant.phone,
+          email: tenant.email,
+          gstin: tenant.gstin,
+          city: tenant.city,
+          state: tenant.state,
+        },
+      },
+    };
   }
 }

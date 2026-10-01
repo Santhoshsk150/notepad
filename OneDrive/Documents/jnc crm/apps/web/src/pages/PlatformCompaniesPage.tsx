@@ -168,6 +168,29 @@ export default function PlatformCompaniesPage() {
     );
   };
 
+  const handleImpersonate = (tenant: Tenant) => {
+    showConfirm(
+      `Switch to ${tenant.name} (${tenant.code}) workspace? You will be logged in as an administrator to help configure settings. You can return to Master Console at any time.`,
+      async () => {
+        try {
+          const { data } = await platformApi.impersonateTenant(tenant.id);
+          const currentToken = localStorage.getItem('jnc_access_token');
+          const currentUser = localStorage.getItem('jnc_user');
+          if (currentToken) sessionStorage.setItem('jnc_master_token', currentToken);
+          if (currentUser) sessionStorage.setItem('jnc_master_user', currentUser);
+
+          localStorage.setItem('jnc_access_token', data.accessToken);
+          localStorage.setItem('jnc_user', JSON.stringify(data.user));
+          window.location.href = '/';
+        } catch (err: any) {
+          showAlert(err?.response?.data?.message || 'Could not enter company workspace', 'Impersonation Failed', 'error');
+        }
+      },
+      'Enter Company Workspace (Support Mode)',
+      'Enter Workspace'
+    );
+  };
+
   const filtered = tenants.filter((t) => {
     const matchesSearch =
       !search ||
@@ -402,7 +425,15 @@ export default function PlatformCompaniesPage() {
                     </td>
 
                     <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                        <button
+                          onClick={() => handleImpersonate(tenant)}
+                          className="btn px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 border border-amber-500/30 flex items-center gap-1 shadow-sm"
+                          title="Salesforce-style Support Login: Enter Company Workspace"
+                        >
+                          <KeyRound size={13} className="text-amber-600 dark:text-amber-400" />
+                          <span>Login As</span>
+                        </button>
                         <button
                           onClick={() => handleViewTenantUsers(tenant.id)}
                           className="btn p-1.5 rounded-lg text-xs font-semibold bg-purple-50 text-purple-600 hover:bg-purple-100 dark:bg-purple-900/20"
