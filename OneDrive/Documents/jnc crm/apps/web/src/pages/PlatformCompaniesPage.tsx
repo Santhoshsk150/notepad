@@ -47,6 +47,10 @@ export default function PlatformCompaniesPage() {
   } | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // View Tenant Details & Users Modal State
+  const [viewingTenant, setViewingTenant] = useState<any | null>(null);
+  const [loadingTenantDetail, setLoadingTenantDetail] = useState(false);
+
   const fetchTenants = async () => {
     try {
       setLoading(true);
@@ -56,6 +60,18 @@ export default function PlatformCompaniesPage() {
       showAlert('Error loading companies', err?.response?.data?.message || 'Failed to fetch customer companies', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleViewTenantUsers = async (tenantId: string) => {
+    try {
+      setLoadingTenantDetail(true);
+      const { data } = await platformApi.getTenant(tenantId);
+      setViewingTenant(data);
+    } catch (err: any) {
+      showAlert('Failed to load company details', err?.response?.data?.message || 'Could not fetch company members', 'error');
+    } finally {
+      setLoadingTenantDetail(false);
     }
   };
 
@@ -337,6 +353,13 @@ export default function PlatformCompaniesPage() {
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
+                          onClick={() => handleViewTenantUsers(tenant.id)}
+                          className="btn p-1.5 rounded-lg text-xs font-semibold bg-purple-50 text-purple-600 hover:bg-purple-100 dark:bg-purple-900/20"
+                          title="View Company Members & Statistics"
+                        >
+                          <Users size={14} />
+                        </button>
+                        <button
                           onClick={() => handleToggleStatus(tenant)}
                           className={`btn p-1.5 rounded-lg text-xs font-semibold ${
                             tenant.status === 'active'
@@ -607,6 +630,120 @@ export default function PlatformCompaniesPage() {
                   className="btn btn-primary text-xs"
                 >
                   Done
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Inspect Company Members & Details Modal */}
+      <AnimatePresence>
+        {viewingTenant && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-[#181B26] border border-slate-200 dark:border-[#2A3042] rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-[#2A3042] bg-slate-50 dark:bg-[#1E2230]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-purple-600/10 text-purple-600 flex items-center justify-center font-bold text-xs">
+                    {viewingTenant.code.slice(0, 3)}
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-slate-900 dark:text-white text-base">
+                      {viewingTenant.name}
+                    </h2>
+                    <div className="text-[11px] text-slate-500">
+                      Org Code: <span className="font-mono text-purple-600 font-bold">{viewingTenant.code}</span> • Plan: <span className="capitalize font-semibold">{viewingTenant.planTier}</span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setViewingTenant(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-white/5"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-5 overflow-y-auto space-y-4 flex-1">
+                {/* Stats row */}
+                <div className="grid grid-cols-4 gap-2 bg-slate-50 dark:bg-[#1E2230] p-3 rounded-xl border border-slate-200 dark:border-[#2A3042] text-center">
+                  <div>
+                    <div className="text-[10px] text-slate-500 uppercase font-semibold">Users</div>
+                    <div className="text-base font-bold text-slate-900 dark:text-white mt-0.5">
+                      {viewingTenant.users?.length || 0} / {viewingTenant.maxUsers}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-500 uppercase font-semibold">Leads</div>
+                    <div className="text-base font-bold text-blue-600 mt-0.5">
+                      {viewingTenant._count?.leads || 0}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-500 uppercase font-semibold">Orders</div>
+                    <div className="text-base font-bold text-indigo-600 mt-0.5">
+                      {viewingTenant._count?.orders || 0}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-500 uppercase font-semibold">Invoices</div>
+                    <div className="text-base font-bold text-emerald-600 mt-0.5">
+                      {viewingTenant._count?.invoices || 0}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Users List */}
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <Users size={14} className="text-purple-600" />
+                    <span>Company Members & Accounts ({viewingTenant.users?.length || 0})</span>
+                  </h3>
+
+                  {(!viewingTenant.users || viewingTenant.users.length === 0) ? (
+                    <div className="text-center py-6 text-slate-400 text-xs bg-slate-50 dark:bg-[#1E2230] rounded-xl border border-slate-200 dark:border-[#2A3042]">
+                      No active users registered under this company yet.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-200 dark:divide-[#2A3042] border border-slate-200 dark:border-[#2A3042] rounded-xl overflow-hidden">
+                      {viewingTenant.users.map((u: any) => (
+                        <div key={u.id} className="p-3 bg-white dark:bg-[#1E2230]/50 flex items-center justify-between text-xs">
+                          <div>
+                            <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                              <span>{u.name}</span>
+                              <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                {u.employeeCode}
+                              </span>
+                            </div>
+                            <div className="text-slate-500 text-[11px] mt-0.5">
+                              {u.email}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="capitalize px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                              {u.role.replace('_', ' ')}
+                            </span>
+                            <span className={`w-2 h-2 rounded-full ${u.isActive ? 'bg-emerald-500' : 'bg-rose-500'}`} title={u.isActive ? 'Active' : 'Inactive'} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-3 border-t border-slate-200 dark:border-[#2A3042] flex items-center justify-end">
+                <button
+                  onClick={() => setViewingTenant(null)}
+                  className="btn btn-secondary text-xs"
+                >
+                  Close
                 </button>
               </div>
             </motion.div>
