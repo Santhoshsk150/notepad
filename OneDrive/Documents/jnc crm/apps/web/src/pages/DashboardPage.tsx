@@ -199,6 +199,102 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* ─── PLATFORM OWNER SAAS MULTI-TENANT COMMAND BAR ──────────────────── */}
+      {kpis.isPlatformOwner && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-indigo-900/90 via-slate-900/95 to-slate-950 text-white border border-indigo-500/30 shadow-lg relative overflow-hidden">
+          <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-48 h-48 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shrink-0 shadow-inner">
+                <Building2 size={22} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black uppercase tracking-wider text-indigo-400 bg-indigo-500/20 px-2 py-0.5 rounded-md border border-indigo-500/30">
+                    Master SaaS Platform
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    Owner: Jayaraj JNC Master
+                  </span>
+                </div>
+                <h3 className="text-base font-black text-white mt-0.5">
+                  Multi-Company Workspace Management Hub
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  {kpis.platformMetrics ? (
+                    <span>
+                      <strong className="text-white">{kpis.platformMetrics.totalCompanies} Companies Registered</strong> •{' '}
+                      <strong className="text-emerald-400">{kpis.platformMetrics.activeCompanies} Active Workspaces</strong> •{' '}
+                      <strong className="text-indigo-300">{kpis.platformMetrics.totalUsers} Global User Seats</strong>
+                    </span>
+                  ) : (
+                    'Provision separate CRM instances, manage client workspaces, and oversee permissions.'
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+              <Link
+                to="/platform/companies"
+                className="btn bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-md gap-1.5 transition-all"
+              >
+                <Building2 size={14} /> Manage All Companies
+              </Link>
+              <Link
+                to="/users"
+                className="btn bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all"
+              >
+                Global Users
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── CLIENT TENANT WELCOME & ONBOARDING ALERT ───────────────────────── */}
+      {kpis.clientTenantInfo && (
+        <div className={`p-4 rounded-2xl border transition-all ${
+          !kpis.clientTenantInfo.isOnboarded || !kpis.clientTenantInfo.gstin
+            ? 'bg-amber-500/10 border-amber-500/30 text-slate-900 dark:text-white'
+            : 'bg-emerald-500/10 border-emerald-500/30 text-slate-900 dark:text-white'
+        }`}>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                !kpis.clientTenantInfo.isOnboarded || !kpis.clientTenantInfo.gstin
+                  ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                  : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+              }`}>
+                <Building2 size={20} />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-slate-950 dark:text-white flex items-center gap-2">
+                  <span>🏢 {kpis.clientTenantInfo.name}</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold">
+                    {kpis.clientTenantInfo.code}
+                  </span>
+                </h4>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                  {!kpis.clientTenantInfo.isOnboarded || !kpis.clientTenantInfo.gstin
+                    ? '⚠️ Setup incomplete: Please configure your Legal Name, GSTIN, PAN, Bank Details & Invoicing Stamp so printed invoices reflect your company details.'
+                    : '✅ Organization Profile is active. All invoices and quotations are customized with your company branding and tax details.'}
+                </p>
+              </div>
+            </div>
+
+            {(!kpis.clientTenantInfo.isOnboarded || !kpis.clientTenantInfo.gstin) && (
+              <Link
+                to="/settings/branding"
+                className="btn bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl shrink-0 gap-1 shadow-sm"
+              >
+                Complete Company Setup <ArrowUpRight size={13} />
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ─── SYSTEM CRITICAL SHORTAGE ALERT (If low stock exists) ───────────── */}
       {kpis.lowStockSkus > 0 && (
         <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/30 flex items-center justify-between flex-wrap gap-3 shadow-sm">

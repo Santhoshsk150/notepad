@@ -338,6 +338,20 @@ export interface InvoiceLine {
 }
 
 export interface DashboardKpis {
+  isPlatformOwner?: boolean;
+  platformMetrics?: {
+    totalCompanies: number;
+    activeCompanies: number;
+    totalUsers: number;
+  } | null;
+  clientTenantInfo?: {
+    id: string;
+    code: string;
+    name: string;
+    isOnboarded: boolean;
+    gstin: string | null;
+    city: string | null;
+  } | null;
   leadsToday: {
     total: number;
     breakdown: {

@@ -11,17 +11,18 @@ import {
 } from 'lucide-react';
 
 const mainNavItems = [
-  { to: '/',              icon: LayoutDashboard, label: 'Dashboard',        roles: ['super_admin', 'admin', 'sub_admin', 'employee', 'store_manager'], pageKey: 'dashboard' },
-  { to: '/leads',         icon: Users,           label: 'Leads',            roles: ['super_admin', 'admin', 'sub_admin', 'employee'], pageKey: 'leads' },
-  { to: '/notifications', icon: Bell,            label: 'Inbox & Alerts',   roles: ['super_admin', 'admin', 'sub_admin', 'employee'], pageKey: 'notifications' },
-  { to: '/orders',        icon: ShoppingCart,    label: 'Orders',           roles: ['super_admin', 'admin', 'sub_admin', 'employee'], pageKey: 'orders' },
-  { to: '/invoices',      icon: Receipt,         label: 'Invoices',         roles: ['super_admin', 'admin', 'sub_admin', 'employee'], pageKey: 'invoices' },
-  { to: '/inventory',     icon: Package,         label: 'Inventory',        roles: ['super_admin', 'admin', 'sub_admin', 'employee', 'store_manager'], pageKey: 'inventory' },
-  { to: '/suppliers',     icon: Building2,       label: 'Suppliers',        roles: ['super_admin', 'admin', 'sub_admin', 'employee', 'store_manager'], pageKey: 'suppliers' },
-  { to: '/shipments',     icon: Truck,           label: 'Shipments',        roles: ['super_admin', 'admin', 'sub_admin', 'employee', 'store_manager'], pageKey: 'shipments' },
-  { to: '/quotations',    icon: FileText,        label: 'Quotations',       roles: ['super_admin', 'admin', 'sub_admin', 'employee'], pageKey: 'quotations' },
-  { to: '/daily-activities', icon: ClipboardList, label: 'Daily Activities', roles: ['super_admin', 'admin', 'sub_admin', 'project_manager', 'developer_lead', 'developer'], pageKey: 'daily_activities' },
-  { to: '/users',         icon: Shield,          label: 'Team & Users',     roles: ['super_admin', 'admin'], pageKey: 'users' },
+  { to: '/',              icon: LayoutDashboard, label: 'Dashboard',        roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin', 'sub_admin', 'employee', 'store_manager'], pageKey: 'dashboard' },
+  { to: '/leads',         icon: Users,           label: 'Leads',            roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin', 'sub_admin', 'employee'], pageKey: 'leads' },
+  { to: '/notifications', icon: Bell,            label: 'Inbox & Alerts',   roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin', 'sub_admin', 'employee'], pageKey: 'notifications' },
+  { to: '/orders',        icon: ShoppingCart,    label: 'Orders',           roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin', 'sub_admin', 'employee'], pageKey: 'orders' },
+  { to: '/invoices',      icon: Receipt,         label: 'Invoices',         roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin', 'sub_admin', 'employee'], pageKey: 'invoices' },
+  { to: '/inventory',     icon: Package,         label: 'Inventory',        roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin', 'sub_admin', 'employee', 'store_manager'], pageKey: 'inventory' },
+  { to: '/suppliers',     icon: Building2,       label: 'Suppliers',        roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin', 'sub_admin', 'employee', 'store_manager'], pageKey: 'suppliers' },
+  { to: '/shipments',     icon: Truck,           label: 'Shipments',        roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin', 'sub_admin', 'employee', 'store_manager'], pageKey: 'shipments' },
+  { to: '/quotations',    icon: FileText,        label: 'Quotations',       roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin', 'sub_admin', 'employee'], pageKey: 'quotations' },
+  { to: '/daily-activities', icon: ClipboardList, label: 'Daily Activities', roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin', 'sub_admin', 'project_manager', 'developer_lead', 'developer'], pageKey: 'daily_activities' },
+  { to: '/platform/companies', icon: Building2,   label: '🏢 Companies',     roles: ['super_admin', 'platform_super_admin'], pageKey: 'platform_companies' },
+  { to: '/users',         icon: Shield,          label: 'Team & Users',     roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin'], pageKey: 'users' },
 ];
 
 const colorForPath: Record<string, string> = {
@@ -35,6 +36,7 @@ const colorForPath: Record<string, string> = {
   '/shipments':         'text-crm-teal',
   '/quotations':        'text-amber-500',
   '/daily-activities':  'text-emerald-500',
+  '/platform/companies':'text-indigo-600 dark:text-indigo-400',
   '/users':             'text-crm-blue',
   '/settings/branding': 'text-crm-teal',
   '/automation':        'text-crm-coral',
@@ -192,6 +194,16 @@ export default function Navbar() {
                 {isAdmin && (
                   <div className="space-y-0.5 border-b border-slate-200 dark:border-[#2A3042]/60 pb-1 mb-1">
                     <p className="px-2.5 py-1 text-[9.5px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Quick Setup</p>
+                    {(user?.role === 'super_admin' || user?.role === 'platform_super_admin') && (
+                      <NavLink
+                        to="/platform/companies"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10 transition-colors"
+                      >
+                        <Building2 size={13} className="text-indigo-600 dark:text-indigo-400" />
+                        <span>🏢 Companies (SaaS Orgs)</span>
+                      </NavLink>
+                    )}
                     <NavLink
                       to="/users"
                       onClick={() => setProfileOpen(false)}
@@ -206,7 +218,7 @@ export default function Navbar() {
                       className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
                     >
                       <Building2 size={13} className="text-crm-teal" />
-                      <span>Company Branding</span>
+                      <span>Company Branding & Tax</span>
                     </NavLink>
                     <NavLink
                       to="/automation"

@@ -25,6 +25,47 @@ export class DashboardService {
 
     const leadScope = this.scopingService.getLeadScope(user);
     const orderScope = this.scopingService.getOrderScope(user);
+    const tenantScope = this.scopingService.getTenantScope(user);
+
+    const isPlatformOwner =
+      user.role === 'platform_super_admin' ||
+      (user.role === 'super_admin' && (!user.tenantId || user.tenantId === 'default-tenant-id'));
+
+    // ─── Platform Multi-Tenant Master Metrics (for Super Admin) ──────────────
+    let platformMetrics: {
+      totalCompanies: number;
+      activeCompanies: number;
+      totalUsers: number;
+    } | null = null;
+
+    if (isPlatformOwner) {
+      const [totalCompanies, activeCompanies, totalUsers] = await Promise.all([
+        this.prisma.tenant.count({ where: { deletedAt: null } }),
+        this.prisma.tenant.count({ where: { status: 'active', deletedAt: null } }),
+        this.prisma.user.count({ where: { deletedAt: null } }),
+      ]);
+      platformMetrics = { totalCompanies, activeCompanies, totalUsers };
+    }
+
+    // ─── Tenant Profile & Onboarding Context (for Client Admins) ──────────────
+    let clientTenantInfo: {
+      id: string;
+      code: string;
+      name: string;
+      isOnboarded: boolean;
+      gstin: string | null;
+      city: string | null;
+    } | null = null;
+
+    if (user.tenantId && user.tenantId !== 'default-tenant-id') {
+      const tenantRecord = await this.prisma.tenant.findUnique({
+        where: { id: user.tenantId },
+        select: { id: true, code: true, name: true, isOnboarded: true, gstin: true, city: true },
+      });
+      if (tenantRecord) {
+        clientTenantInfo = tenantRecord;
+      }
+    }
 
     // ─── Leads Today by source ──────────────────────────────────────────────
     const [leadsToday, leadsIndiamart, leadsWeb, leadsWhatsapp, leadsManual] = await Promise.all([
@@ -45,11 +86,12 @@ export class DashboardService {
       }),
     ]);
 
-    // ─── Pending Follow-ups ─────────────────────────────────────────────────
+    // ─── Pending Follow-ups (Scoped to user's tenant/accessible leads) ─────────
     const pendingFollowUps = await this.prisma.leadActivity.count({
       where: {
         isCompleted: false,
         type: { in: ['task', 'reminder', 'call'] },
+        lead: { ...leadScope, deletedAt: null },
       },
     });
 
@@ -62,9 +104,9 @@ export class DashboardService {
       },
     });
 
-    // ─── Low Stock SKUs ─────────────────────────────────────────────────────
+    // ─── Low Stock SKUs (Strictly Scoped by Tenant) ──────────────────────────
     const allSkus = await this.prisma.sku.findMany({
-      where: { deletedAt: null },
+      where: { ...tenantScope, deletedAt: null },
       include: { stockItems: true },
     });
     const lowStockCount = allSkus.filter((sku) => {
@@ -72,9 +114,9 @@ export class DashboardService {
       return totalOnHand <= sku.reorderPoint;
     }).length;
 
-    // ─── Active Supplier Companies ──────────────────────────────────────────
+    // ─── Active Supplier Companies (Strictly Scoped by Tenant) ───────────────
     const activeSuppliersCount = await this.prisma.supplier.count({
-      where: { isActive: true, deletedAt: null },
+      where: { ...tenantScope, isActive: true, deletedAt: null },
     });
 
     // ─── Total leads in pipeline (by status) ───────────────────────────────
@@ -126,6 +168,9 @@ export class DashboardService {
     });
 
     return {
+      isPlatformOwner,
+      platformMetrics,
+      clientTenantInfo,
       leadsToday: {
         total: leadsToday,
         breakdown: {
