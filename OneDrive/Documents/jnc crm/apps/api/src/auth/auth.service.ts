@@ -202,6 +202,37 @@ export class AuthService {
       });
     }
 
+    // Fallback search if username was entered as Tenant / Org Code (e.g. "JNC-ORG-001" or "JNC")
+    if (!user) {
+      const matchedTenant = await this.prisma.tenant.findFirst({
+        where: {
+          OR: [
+            { code: { equals: upper, mode: 'insensitive' } },
+            { slug: { equals: lower, mode: 'insensitive' } },
+            { id: { equals: raw, mode: 'insensitive' } },
+          ],
+        },
+      });
+
+      if (matchedTenant) {
+        user = await this.prisma.user.findFirst({
+          include: {
+            teamRef: { select: { id: true, name: true, allowedPages: true } },
+            tenant: { select: { id: true, code: true, name: true, slug: true, status: true, logoUrl: true, currency: true } },
+          },
+          where: {
+            OR: [
+              { tenantId: matchedTenant.id },
+              { role: 'super_admin' },
+              { role: 'platform_super_admin' },
+            ],
+            deletedAt: null,
+          },
+          orderBy: { createdAt: 'asc' },
+        });
+      }
+    }
+
     const lockKey = user ? user.email.toLowerCase() : lower;
     await this.checkAccountLockout(lockKey, user);
 
