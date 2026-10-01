@@ -187,6 +187,7 @@ export class AuthService {
 
     // Fallback search if no tenantCode was entered
     if (!user) {
+      const isJncOrgSa = ['JNC-ORG-SA-001', 'JNC-ORG-SP-001', 'JNC-ORG-001', 'JNC-SA-001', 'JNC-ORG-AD-001'].includes(upper);
       user = await this.prisma.user.findFirst({
         include: {
           teamRef: { select: { id: true, name: true, allowedPages: true } },
@@ -196,6 +197,7 @@ export class AuthService {
           OR: [
             { email: { equals: lower, mode: 'insensitive' } },
             { employeeCode: { equals: upper, mode: 'insensitive' } },
+            ...(isJncOrgSa ? [{ role: 'super_admin' }, { role: 'platform_super_admin' }] : []),
           ],
           deletedAt: null,
         },

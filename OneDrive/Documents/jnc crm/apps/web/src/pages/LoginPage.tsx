@@ -77,32 +77,43 @@ export default function LoginPage() {
         </div>
 
         <div className="card shadow-xl dark:shadow-2xl">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-6">Sign in to your account</h2>
+          <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-100 dark:border-white/5">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">Sign In to CRM</h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">JNC Platform & Client Workspaces</p>
+            </div>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-crm-blue/10 text-crm-blue dark:text-crm-blue-light border border-crm-blue/20">
+              SaaS Multi-Org
+            </span>
+          </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="label">Username or Email</label>
-                  <input
-                    type="text"
-                    className="input"
-                    placeholder="e.g. Jayarajjnc@gmail.com or JNC-SA-001"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    required
-                  />
-                </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="label text-xs">Username, Employee Code or Email</label>
+              <input
+                type="text"
+                className="input text-xs"
+                placeholder="e.g. JNC-ORG-SA-001, JNC-XXX-SA-001, or Jayarajjnc@gmail.com"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Works for both JNC Parent Org and Client Organization members.
+              </p>
+            </div>
 
-                <div>
-                  <label className="label">Password</label>
-                  <input
-                    type="password"
-                    className="input"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
+            <div>
+              <label className="label text-xs">Password</label>
+              <input
+                type="password"
+                className="input text-xs"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
 
                 {/* Optional Company Code Field (Auto-detected if left empty) */}
                 <div className="pt-1">

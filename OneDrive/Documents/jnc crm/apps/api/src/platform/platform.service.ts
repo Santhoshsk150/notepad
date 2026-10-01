@@ -146,7 +146,7 @@ export class PlatformService {
 
     const tempPassword = dto.adminPassword || 'Admin@123456';
     const passwordHash = await bcrypt.hash(tempPassword, 10);
-    const adminEmployeeCode = `${cleanCode}-SA-001`;
+    const adminEmployeeCode = cleanCode.startsWith('JNC-') ? `${cleanCode}-SA-001` : `JNC-${cleanCode}-SA-001`;
 
     // 2. Transactional creation of Tenant + Company Admin
     const result = await this.prisma.$transaction(async (tx) => {

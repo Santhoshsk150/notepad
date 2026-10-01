@@ -46,13 +46,18 @@ export class UsersService {
       where: { id: tenantId },
       select: { code: true },
     });
-    const orgPrefix = tenant?.code || 'JNC';
+    let orgPrefix = tenant?.code || 'JNC-ORG';
+    if (orgPrefix === 'JNC-ORG-001' || orgPrefix === 'default-tenant-id' || orgPrefix === 'JNC') {
+      orgPrefix = 'JNC-ORG';
+    } else if (!orgPrefix.startsWith('JNC-')) {
+      orgPrefix = `JNC-${orgPrefix}`;
+    }
 
     const prefixMap: Record<string, string> = {
-      platform_super_admin: `${orgPrefix}-PSA`,
+      platform_super_admin: `${orgPrefix}-SA`,
       super_admin: `${orgPrefix}-SA`,
-      tenant_admin: `${orgPrefix}-ADM`,
-      admin: `${orgPrefix}-ADM`,
+      tenant_admin: `${orgPrefix}-AD`,
+      admin: `${orgPrefix}-AD`,
       sub_admin: `${orgPrefix}-SUB`,
       employee: `${orgPrefix}-EMP`,
       store_manager: `${orgPrefix}-STM`,
