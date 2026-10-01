@@ -22,10 +22,10 @@ const transporter = nodemailer.createTransport({
 
 const users = [
   {
-    name: 'Jayaraj',
+    name: 'JNC Owner',
     role: 'Super Admin (Boss)',
     employeeCode: 'JNC-SA-001',
-    email: 'Jayarajjnc@gmail.com',
+    email: 'owner@jncnetwork.com',
     tempPassword: 'Jnc#Boss5798!'
   },
   {

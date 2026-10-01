@@ -80,6 +80,7 @@ jnc-crm/
 ---
 
 ## 🔑 Default Super Admin Credentials
-- **Name**: Jayaraj
-- **Email**: `Jayarajjnc@gmail.com`
+- **Name**: JNC Owner
+- **Email**: `owner@jncnetwork.com`
+- **Employee Code**: `JNC-SA-001`
 - **Role**: `super_admin`
