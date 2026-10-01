@@ -22,8 +22,16 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(username, password, companyCode.trim() || undefined);
-      navigate('/');
+      const loggedInUser = await login(username, password, companyCode.trim() || undefined);
+      const isPlatformOwner =
+        loggedInUser?.role === 'platform_super_admin' ||
+        (loggedInUser?.role === 'super_admin' && (!loggedInUser?.tenantId || loggedInUser?.tenantId === 'default-tenant-id'));
+
+      if (isPlatformOwner) {
+        navigate('/platform/companies');
+      } else {
+        navigate('/');
+      }
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Invalid credentials. Please try again.');
     } finally {

@@ -52,6 +52,18 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
+function PlatformOwnerGuard({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const isPlatformOwner =
+    user?.role === 'platform_super_admin' ||
+    (user?.role === 'super_admin' && (!user?.tenantId || user?.tenantId === 'default-tenant-id'));
+
+  if (!isPlatformOwner) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+}
+
 function AppRoutes() {
   const { isAuthenticated } = useAuth();
 
@@ -81,7 +93,7 @@ function AppRoutes() {
         <Route path="shipments" element={<TeamPageGuard pageKey="shipments"><ShipmentsPage /></TeamPageGuard>} />
         <Route path="quotations" element={<TeamPageGuard pageKey="quotations"><QuotationsPage /></TeamPageGuard>} />
         <Route path="users" element={<TeamPageGuard pageKey="users"><UsersPage /></TeamPageGuard>} />
-        <Route path="platform/companies" element={<TeamPageGuard pageKey="users"><PlatformCompaniesPage /></TeamPageGuard>} />
+        <Route path="platform/companies" element={<PlatformOwnerGuard><PlatformCompaniesPage /></PlatformOwnerGuard>} />
         <Route path="settings/branding" element={<TeamPageGuard pageKey="users"><BrandingSettingsPage /></TeamPageGuard>} />
         <Route path="automation" element={<TeamPageGuard pageKey="automation"><AutomationPage /></TeamPageGuard>} />
         <Route path="setup/objects" element={<TeamPageGuard pageKey="custom_objects"><ObjectManagerPage /></TeamPageGuard>} />

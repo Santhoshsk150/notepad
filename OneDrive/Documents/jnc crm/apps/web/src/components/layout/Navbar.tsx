@@ -21,7 +21,7 @@ const mainNavItems = [
   { to: '/shipments',     icon: Truck,           label: 'Shipments',        roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin', 'sub_admin', 'employee', 'store_manager'], pageKey: 'shipments' },
   { to: '/quotations',    icon: FileText,        label: 'Quotations',       roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin', 'sub_admin', 'employee'], pageKey: 'quotations' },
   { to: '/daily-activities', icon: ClipboardList, label: 'Daily Activities', roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin', 'sub_admin', 'project_manager', 'developer_lead', 'developer'], pageKey: 'daily_activities' },
-  { to: '/platform/companies', icon: Building2,   label: '🏢 Companies',     roles: ['super_admin', 'platform_super_admin'], pageKey: 'platform_companies' },
+  { to: '/platform/companies', icon: Building2,   label: '🏢 Companies',     platformOwnerOnly: true, roles: ['super_admin', 'platform_super_admin'], pageKey: 'platform_companies' },
   { to: '/users',         icon: Shield,          label: 'Team & Users',     roles: ['super_admin', 'platform_super_admin', 'tenant_admin', 'admin'], pageKey: 'users' },
 ];
 
@@ -53,7 +53,11 @@ export default function Navbar() {
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
 
-  const isAdmin = user?.role === 'super_admin' || user?.role === 'admin' || user?.role === 'sub_admin';
+  const isPlatformOwner =
+    user?.role === 'platform_super_admin' ||
+    (user?.role === 'super_admin' && (!user?.tenantId || user?.tenantId === 'default-tenant-id'));
+
+  const isAdmin = isPlatformOwner || user?.role === 'tenant_admin' || user?.role === 'admin' || user?.role === 'sub_admin';
 
   // Click outside listener
   useEffect(() => {
@@ -93,7 +97,11 @@ export default function Navbar() {
       {/* ─── HORIZONTAL BALANCED LINEAR NAVIGATION ITEMS (Desktop) ────────── */}
       <nav className="hidden lg:flex items-center gap-1 overflow-x-auto py-1 scrollbar-none">
         {mainNavItems
-          .filter(item => !item.roles || item.roles.includes(user?.role || ''))
+          .filter(item => {
+            if (item.platformOwnerOnly && !isPlatformOwner) return false;
+            if (item.roles && !item.roles.includes(user?.role || '')) return false;
+            return true;
+          })
           .map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
