@@ -1,0 +1,14 @@
+# JNC-CRM Hostinger / cPanel SPA Configuration (for admin.jsnc.co.in)
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 1. Serve existing files and directories directly
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # 2. Single Page Application (SPA) Fallback to index.html
+  RewriteRule ^ index.html [L]
+</IfModule>

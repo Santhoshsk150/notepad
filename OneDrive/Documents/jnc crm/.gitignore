@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing / Scratch
+scratch/
+.system_generated/
+*.log
+diff_report.json
+
+# Production builds (included in zip, but ignored in raw repo source)
+dist/
+build/
+.turbo
+.cache
+
+# Environment variables & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Deployment archives
+*.zip

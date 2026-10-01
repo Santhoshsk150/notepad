@@ -1,0 +1,178 @@
+/* --- C2PA CONTENT CREDENTIALS & PROVENANCE NOTICE ---
+ * c2pa.action: 'c2pa.created'
+ * c2pa.ai_training: 'disallowed'
+ * c2pa.do_not_train: true
+ * rights: 'All rights reserved by original author. Automated AI scraping without license is prohibited.'
+ * ----------------------------------------------------- */
+
+import { Controller, Get, Post, Patch, Body, Param, Query, Res, UseGuards, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { PageAccess } from '../auth/page-access.decorator';
+import { AuthGuard } from '@nestjs/passport';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { ScopedUser } from '../auth/scoping.service';
+import { LeadsService } from './leads.service';
+import { CreateLeadDto, UpdateLeadStatusDto, CreateLeadActivityDto } from './dto/create-lead.dto';
+import { FileInterceptor } from '@nestjs/platform-express';
+import * as Papa from 'papaparse';
+import * as XLSX from 'xlsx';
+import { Response } from 'express';
+
+@Controller('leads')
+@UseGuards(AuthGuard('jwt'), RolesGuard)
+@PageAccess('leads')
+export class LeadsController {
+  constructor(private leadsService: LeadsService) {}
+
+  @Post()
+  @Roles('super_admin', 'admin', 'sub_admin', 'employee')
+  async createLead(@Body() dto: CreateLeadDto, @CurrentUser() user: ScopedUser) {
+    return this.leadsService.createLead(dto, user);
+  }
+
+  @Get()
+  async getLeads(
+    @CurrentUser() user: ScopedUser,
+    @Query('status') status?: string,
+    @Query('source') source?: string,
+    @Query('assignedToId') assignedToId?: string,
+    @Query('search') search?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.leadsService.findAll(user, {
+      status,
+      source,
+      assignedToId,
+      search,
+      startDate,
+      endDate,
+      page,
+      limit,
+    });
+  }
+
+  @Get('template-csv')
+  downloadTemplate(@Res() res: Response) {
+    const csvContent = `company_name,contact_name,phone,email,product_interest,city,estimated_value,assigned_to,source
+Apex Robotics Pvt Ltd,Rajesh Sharma,9845012345,rajesh@apexrobotics.in,STM32F401RET6 MCU,Bengaluru,75000,,manual
+Quantron Automation,Pooja Patel,9820055443,pooja@quantron.com,ESP32-S3 Dual-Core Module,Pune,45000,,web
+Voltrix Embedded,Anand Verma,9811122334,anand@voltrix.in,ATmega328P DIP-28,Hyderabad,28000,,trade_show
+Nexus Power Electronics,Siddharth Rao,9876543210,siddharth@nexuspower.in,IRFZ44N Power MOSFET,Chennai,120000,,manual
+`;
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="jnc_leads_import_template.csv"');
+    return res.send(csvContent);
+  }
+
+  @Get(':id')
+  async getLead(@Param('id') id: string, @CurrentUser() user: ScopedUser) {
+    return this.leadsService.findOne(id, user);
+  }
+
+  @Patch(':id/status')
+  async updateStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateLeadStatusDto,
+    @CurrentUser() user: ScopedUser,
+  ) {
+    return this.leadsService.updateStatus(id, dto, user);
+  }
+
+  @Post(':id/activities')
+  async addActivity(
+    @Param('id') id: string,
+    @Body() dto: CreateLeadActivityDto,
+    @CurrentUser() user: ScopedUser,
+  ) {
+    return this.leadsService.addActivity(id, dto, user);
+  }
+
+  @Post(':id/share')
+  @Roles('super_admin', 'admin', 'sub_admin', 'employee')
+  async shareLead(
+    @Param('id') id: string,
+    @Body('targetUserId') targetUserId: string,
+    @CurrentUser() user: ScopedUser,
+  ) {
+    if (!targetUserId) {
+      throw new BadRequestException('targetUserId is required for sharing.');
+    }
+    return this.leadsService.shareLead(id, targetUserId, user);
+  }
+
+  /**
+   * Bulk Excel / CSV Upload Preview with 30-Day Duplicate Evaluation
+   * 50MB file size limit + XLSX / CSV support
+   */
+  @Post('import-preview')
+  @Roles('super_admin', 'admin', 'sub_admin')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+    }),
+  )
+  async previewSpreadsheet(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: ScopedUser,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Spreadsheet file is required');
+    }
+
+    let records: any[] = [];
+    const lowerName = file.originalname.toLowerCase();
+
+    if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+      try {
+        const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        records = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+      } catch (err: any) {
+        throw new BadRequestException(`Excel parsing error: ${err.message}`);
+      }
+    } else {
+      const csvContent = file.buffer.toString('utf-8');
+      const parseResult = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
+      if (parseResult.errors.length > 0 && parseResult.data.length === 0) {
+        throw new BadRequestException(`CSV parse error: ${parseResult.errors[0].message}`);
+      }
+      records = parseResult.data;
+    }
+
+    return this.leadsService.previewImport(records, user);
+  }
+
+  /**
+   * Bulk JSON preview evaluation
+   */
+  @Post('import-preview-json')
+  @Roles('super_admin', 'admin', 'sub_admin')
+  async previewJson(
+    @Body() body: { records: any[] },
+    @CurrentUser() user: ScopedUser,
+  ) {
+    if (!body.records || !Array.isArray(body.records)) {
+      throw new BadRequestException('Records array is required');
+    }
+    return this.leadsService.previewImport(body.records, user);
+  }
+
+  /**
+   * Bulk Commit approved rows
+   */
+  @Post('import-commit')
+  @Roles('super_admin', 'admin', 'sub_admin')
+  async commitImport(
+    @Body() body: { records: any[] },
+    @CurrentUser() user: ScopedUser,
+  ) {
+    if (!body.records || !Array.isArray(body.records)) {
+      throw new BadRequestException('Records array is required');
+    }
+    return this.leadsService.commitImport(body.records, user);
+  }
+}
